@@ -70,6 +70,7 @@ class EnergySavingEnv(NsOranEnv):
             'RRU_PRBTOTDL_2', 'RRU_PRBTOTDL_3', 'RRU_PRBTOTDL_4', 'RRU_PRBTOTDL_5', 'RRU_PRBTOTDL_6', 'RRU_PRBTOTDL_7', 'RRU_PRBTOTDL_8',
             'RRU.PrbUsedDl_2', 'RRU.PrbUsedDl_3', 'RRU.PrbUsedDl_4', 'RRU.PrbUsedDl_5', 'RRU.PrbUsedDl_6', 'RRU.PrbUsedDl_7', 'RRU.PrbUsedDl_8',
             'TB_TOTNBRDLINITIAL_64QAM_RATIO_2', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_3', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_4', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_5', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_6', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_7', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_8',
+            'DRB.MeanActiveUeDl_2', 'DRB.MeanActiveUeDl_3', 'DRB.MeanActiveUeDl_4', 'DRB.MeanActiveUeDl_5', 'DRB.MeanActiveUeDl_6', 'DRB.MeanActiveUeDl_7', 'DRB.MeanActiveUeDl_8',
             'SUM_QosFlow.PdcpPduVolumeDL_Filter',
             'SUM_RLF_VALUE',
             'SUM_TB.TotNbrDl.1',
@@ -86,6 +87,7 @@ class EnergySavingEnv(NsOranEnv):
         self.action_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 28, 32, 33, 34, 35, 36, 37, 38, 40, 41, 42, 44, 48, 49, 50, 52, 56, 64, 65, 66, 67, 68, 69, 70, 72, 73, 74, 76, 80, 81, 82, 84, 88, 96, 97, 98, 100, 104, 112]
         self.cellList = [2, 3, 4, 5, 6, 7, 8]
         self.observations = []
+        self._last_obs_df = None  # last non-empty observation, reused when a KPM window is empty
         self.cells_states = {}
         # Used for ES_ON_COST and used to save the timestamp when a cell change state
         self.cell_timestamp_state_dict = {cell: float('inf') for cell in self.cellList} 
@@ -145,11 +147,23 @@ class EnergySavingEnv(NsOranEnv):
     @override
     def _get_obs(self):
         # ["cellId", "QOSFLOW_PDCPPDUVOLUMEDL_FILTER", "TB_TOTNBRDL_1", "L3servingSINR", "RRU_PRBUSEDDL", "TB_TOTNBRDLINITIAL_64QAM", "TB_TOTNBRDLINITIAL_QPSK", "TB_TOTNBRDLINITIAL_16QAM", "ES_STATE"] #Database (1=ON, 0=OFF), Mavnenir(1=OFF, 0=ON)
-        kpms_raw = ["nrCellId", "QosFlow.PdcpPduVolumeDL_Filter", "TB.TotNbrDl.1", "L3 serving SINR", "RRU.PrbUsedDl", "TB.TotNbrDlInitial.64Qam", "TB.TotNbrDlInitial.Qpsk", "TB.TotNbrDlInitial.16Qam"]       
+        kpms_raw = ["nrCellId", "QosFlow.PdcpPduVolumeDL_Filter", "TB.TotNbrDl.1", "L3 serving SINR", "RRU.PrbUsedDl", "TB.TotNbrDlInitial.64Qam", "TB.TotNbrDlInitial.Qpsk", "TB.TotNbrDlInitial.16Qam", "DRB.MeanActiveUeDl"]       
         ue_kpms = self.datalake.read_kpms(self.last_timestamp, kpms_raw) 
         self._update_cell_states()  
         # Now cells_states is updated with state of latest cells           
         # iterate over ue_kpms to add state value
+        if not ue_kpms:
+            # Empty KPM window: read_kpms found no matching NR+LTE UE records for this
+            # 100 ms window and returned None. Reuse the last good observation (or a
+            # zero-filled row on the very first window) so this method AND _compute_reward
+            # keep working. columns_reward is a subset of columns_state, so a 1-row
+            # DataFrame keyed on columns_state satisfies both and never leaves
+            # self.observations as the initial [] list (the source of the TypeError crash).
+            if self._last_obs_df is not None:
+                self.observations = self._last_obs_df
+            else:
+                self.observations = pd.DataFrame([{c: 0.0 for c in self.columns_state}])
+            return [tuple(self.observations[self.columns_state].iloc[0].values)]
         ue_complete_kpms = []
         # For each row in ue_kpms look for its state into cells_states and save it
         for ue_kpm in ue_kpms:
@@ -170,6 +184,7 @@ class EnergySavingEnv(NsOranEnv):
         # Now we need to convert the dataframe from UEs centric to Cell centric
         df = self.ue_centric_tocell_centric(df)
         self.observations = self.offline_training_preprocessing(df)
+        self._last_obs_df = self.observations  # cache last good observation for empty windows
         states = self.observations[self.columns_state]
         states_tuple = [tuple(states.iloc[0].values)]
         return states_tuple
@@ -375,8 +390,12 @@ class EnergySavingEnv(NsOranEnv):
         df['RLF_Counter'] = 0.0
         df['RLF_VALUE'] = 0
         columns += ['RLF_Counter', 'RLF_VALUE']
-        # Replace -inf values in 'L3 serving SINR' with 0
-        df['L3 serving SINR'] = df['L3 serving SINR'].replace(-np.inf, 0)
+        # Coerce 'L3 serving SINR' to numeric first: the KPM read can return strings or
+        # blanks, which made the '< -5' comparison below raise
+        # `TypeError: '<' not supported between instances of 'str' and 'int'`.
+        # Then map -inf (existing behaviour) and any non-numeric/missing entries to 0.
+        df['L3 serving SINR'] = pd.to_numeric(df['L3 serving SINR'], errors='coerce')
+        df['L3 serving SINR'] = df['L3 serving SINR'].replace(-np.inf, 0).fillna(0)
         # Group by timestamp and nrCellId for efficient processing
         grouped = df.groupby(['timestamp', 'nrCellId'])
         # Iterate through each group
