@@ -171,21 +171,24 @@ def main():
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         per_cell, _ = read_bsstate(args.folder)
+        util = read_mean_util(args.folder)
+        p_on = {c: args.p_static + args.alpha * util.get(c, 0.0) for c in per_cell}
+        base_power = sum(p_on.values())                  # every cell ON (validated baseline)
+        state_at = {c: dict(tl) for c, tl in per_cell.items()}
         ts = sorted({t for tl in per_cell.values() for t, _ in tl})
-        cells_on = []
-        for t in ts:
-            on = 0
-            for tl in per_cell.values():
-                st = [s for (tt, s) in tl if abs(tt - t) < 1e-6]
-                on += st[0] if st else 0
-            cells_on.append(on)
-        fig, ax = plt.subplots(figsize=(9, 3.5))
-        ax.step(ts, cells_on, where="post")
-        ax.set_xlabel("sim time (s)"); ax.set_ylabel("gNBs ON")
-        ax.set_title(f"cells_on over time - {os.path.basename(args.folder.rstrip('/'))}")
-        ax.set_ylim(0, len(per_cell) + 0.5); ax.grid(alpha=0.3)
-        fig.tight_layout(); fig.savefig(args.plot, dpi=110)
-        print(f"  plot saved: {args.plot}")
+        power = [sum(p_on[c] if state_at[c].get(t, 0) == 1 else args.p_sleep
+                     for c in per_cell) for t in ts]
+        saved = (base_power * len(ts) - sum(power)) / (base_power * len(ts)) * 100 if ts else 0.0
+        fig, ax = plt.subplots(figsize=(9, 4))
+        ax.step(ts, power, where="post", color="tab:blue", lw=1.8, label="controller power")
+        ax.axhline(base_power, ls="--", color="tab:red", label=f"all-on baseline ({base_power:.0f} W)")
+        ax.fill_between(ts, power, base_power, step="post", alpha=0.15, color="tab:green")
+        ax.set_xlabel("sim time (s)"); ax.set_ylabel("total RU power (W)")
+        ax.set_title(f"Energy over time - {os.path.basename(args.folder.rstrip('/'))}  "
+                     f"(~{saved:.0f}% saved; green = energy saved)")
+        ax.set_ylim(0, base_power * 1.12); ax.grid(alpha=0.3); ax.legend(loc="lower right")
+        fig.tight_layout(); fig.savefig(args.plot, dpi=120)
+        print(f"  plot saved: {args.plot}  (~{saved:.0f}% energy saved vs all-on)")
 
 
 if __name__ == "__main__":
