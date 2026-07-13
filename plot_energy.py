@@ -80,18 +80,21 @@ def read_mean_util(folder):
     return util
 
 
-def read_mean_throughput_mbps(folder):
-    """Mean grafana throughput (Mbps) if a datalake is present, else None."""
+def read_grafana_means(folder):
+    """Mean (throughput Mbps, rlf) from the grafana table, or (None, None).
+    throughput is the primary QoS proxy; rlf (radio link failures) is reliability."""
     db = os.path.join(folder, "database.db")
     if not os.path.exists(db):
-        return None
+        return None, None
     try:
         con = sqlite3.connect(db)
-        row = con.execute("SELECT AVG(throughput) FROM grafana").fetchone()
+        row = con.execute("SELECT AVG(throughput), AVG(rlf) FROM grafana").fetchone()
         con.close()
-        return float(row[0]) if row and row[0] is not None else None
+        thr = float(row[0]) if row and row[0] is not None else None
+        rlf = float(row[1]) if row and row[1] is not None else None
+        return thr, rlf
     except sqlite3.Error:
-        return None
+        return None, None
 
 
 def compute_energy(per_cell, dt, util, p_static, alpha, p_sleep):
@@ -117,11 +120,11 @@ def summarize(folder, dt, p_static, alpha, p_sleep):
     dt = dt_run if dt is None else dt
     util = read_mean_util(folder)
     e_ctrl, e_base, per = compute_energy(per_cell, dt, util, p_static, alpha, p_sleep)
-    thr = read_mean_throughput_mbps(folder)
+    thr, rlf = read_grafana_means(folder)
     n_steps = max((len(t) for t in per_cell.values()), default=0)
     mean_on = (sum(v["on"] for v in per.values()) / n_steps) if n_steps else 0.0
     return dict(folder=folder, dt=dt, per=per, util=util, e_ctrl=e_ctrl,
-                e_base=e_base, thr=thr, n_steps=n_steps, mean_on=mean_on)
+                e_base=e_base, thr=thr, rlf=rlf, n_steps=n_steps, mean_on=mean_on)
 
 
 def main():
@@ -148,7 +151,9 @@ def main():
         saved = (s["e_base"] - s["e_ctrl"]) / s["e_base"] * 100
         print(f"  >> energy saved vs same-cells-all-on: {saved:.1f}%")
     if s["thr"] is not None:
-        print(f"  mean throughput   : {s['thr']:.2f} Mbps")
+        print(f"  mean throughput   : {s['thr']:.2f} Mbps  (QoS)")
+    if s.get("rlf") is not None:
+        print(f"  mean RLF          : {s['rlf']:.3f}  (QoS reliability; lower is better)")
 
     if args.baseline:
         b = summarize(args.baseline, None, args.p_static, args.alpha, args.p_sleep)
