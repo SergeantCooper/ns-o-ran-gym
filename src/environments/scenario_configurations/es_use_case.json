@@ -1,7 +1,7 @@
 {
   "heuristicType":[-1],
-  "simTime":[10],
-  "ues":[3],
+  "simTime":[6],
+  "ues":[6],
   "RngRun":[555],
   "configuration":[0],
   "trafficModel":[3],
