@@ -25,17 +25,24 @@ Self-test the decision logic without ns-3:
 """
 import argparse
 import json
+import os
 
 CELL_LIST = [2, 3, 4, 5, 6, 7, 8]
 
 DEFAULT_CFG = dict(
-    w_prb=0.5, w_ue=0.25, w_thr=0.25,  # LoadScore weights: DL-PRB, active-UEs, throughput
-                                       # (UL-PRB omitted: it is identically 0 in this DL-only scenario)
+    w_prb=0.6, w_thr=0.4,              # LoadScore weights: DL-PRB + throughput, per-cell normalized.
+                                       # active-UE and UL-PRB deliberately excluded: at the twin's 100 ms
+                                       # granularity active-UE counts camped/idle UEs (idle cells show
+                                       # 1-3 UEs with 0 traffic), so per-cell normalization makes it spike
+                                       # and reset the sleep hysteresis; UL-PRB is identically 0 here.
     blend_avg=0.6, blend_peak=0.4,     # Step 5 blend
     thr_capacity=20.0, thr_coverage=15.0,   # Step 5 sleep thresholds (on normalized LoadScore)
     prb_low_abs=20.0,                  # absolute PRB% floor required to sleep (robust to warmup)
     T_sleep=4, T_cooldown=8, T_guardrail=4, # Steps 6/12/14, counted in CONTROL STEPS
-    wake_neigh_prb=75.0,               # Step 9: wake if an ON neighbor exceeds this PRB%
+    wake_neigh_prb=90.0,               # Step 9: wake a slept cell if an ON neighbor is genuinely
+                                       # congested. Spec says 75%, but in this scenario a normally-busy
+                                       # anchor-adjacent cell sits at ~75-84% PRB, which would wake idle
+                                       # neighbours every step; 90% reserves wake-up for real overload.
     neigh_future_max=70.0, anchor_spare=50.0,   # Step 7 feasibility
     g_thr_loss=5.0, g_rlf_rise=5.0,    # Step 14 guardrails
 )
@@ -48,8 +55,8 @@ class TwinHeuristic:
         self.role = {c: ("coverage" if c in self.anchor else "capacity") for c in self.cells}
         self.cfg = dict(DEFAULT_CFG); self.cfg.update(cfg or {})
         inf = float("inf")
-        self.mn = {c: {"prb": inf, "thr": inf, "ue": inf} for c in self.cells}
-        self.mx = {c: {"prb": -inf, "thr": -inf, "ue": -inf} for c in self.cells}
+        self.mn = {c: {"prb": inf, "thr": inf} for c in self.cells}
+        self.mx = {c: {"prb": -inf, "thr": -inf} for c in self.cells}
         self.low_streak = {c: 0 for c in self.cells}
         self.cooldown = {c: 0 for c in self.cells}
         self.state = {c: 1 for c in self.cells}         # 1 = ON, 0 = OFF (sleep)
@@ -90,7 +97,7 @@ class TwinHeuristic:
         if not hasattr(obs, "columns"):
             return [1] * len(self.cells)
 
-        prb, thr, rlf, ue = {}, {}, {}, {}
+        prb, thr, rlf = {}, {}, {}
         for c in self.cells:
             # RRU_PRBTOTDL_{c} is ALREADY DL PRB utilisation % ((PrbUsedDl/139)*100),
             # produced by es_env.offline_training_preprocessing - NOT a PRB total. Use it
@@ -99,7 +106,6 @@ class TwinHeuristic:
             prb[c] = self._v(obs, f"RRU_PRBTOTDL_{c}")
             thr[c] = self._v(obs, f"QosFlow.PdcpPduVolumeDL_Filter_{c}")
             rlf[c] = self._v(obs, f"RLF_VALUE_{c}")
-            ue[c] = self._v(obs, f"DRB.MeanActiveUeDl_{c}")   # active UEs (spec LoadScore signal)
         sum_thr = self._v(obs, "SUM_QosFlow.PdcpPduVolumeDL_Filter")
         sum_rlf = self._v(obs, "SUM_RLF_VALUE")
 
@@ -123,7 +129,6 @@ class TwinHeuristic:
         for c in self.cells:                                           # update per-cell min/max
             self.mn[c]["prb"] = min(self.mn[c]["prb"], prb[c]); self.mx[c]["prb"] = max(self.mx[c]["prb"], prb[c])
             self.mn[c]["thr"] = min(self.mn[c]["thr"], thr[c]); self.mx[c]["thr"] = max(self.mx[c]["thr"], thr[c])
-            self.mn[c]["ue"] = min(self.mn[c]["ue"], ue[c]); self.mx[c]["ue"] = max(self.mx[c]["ue"], ue[c])
 
         self.warmup = max(0, self.warmup - 1)
         live = dict(self.state)                                        # decisions ripple within the step
@@ -131,9 +136,9 @@ class TwinHeuristic:
             if self.cooldown[c] > 0:
                 self.cooldown[c] -= 1
 
-            pn = self._norm(c, "prb", prb[c]); tn = self._norm(c, "thr", thr[c]); un = self._norm(c, "ue", ue[c])
-            weighted = self.cfg["w_prb"] * pn + self.cfg["w_ue"] * un + self.cfg["w_thr"] * tn
-            load_score = self.cfg["blend_avg"] * weighted + self.cfg["blend_peak"] * max(pn, un, tn)  # Step 5
+            pn = self._norm(c, "prb", prb[c]); tn = self._norm(c, "thr", thr[c])
+            weighted = self.cfg["w_prb"] * pn + self.cfg["w_thr"] * tn
+            load_score = self.cfg["blend_avg"] * weighted + self.cfg["blend_peak"] * max(pn, tn)  # Step 5
             thr_th = self.cfg["thr_coverage"] if self.role[c] == "coverage" else self.cfg["thr_capacity"]
             low = (load_score < thr_th) and (prb[c] < self.cfg["prb_low_abs"])
             self.low_streak[c] = self.low_streak[c] + 1 if low else 0
@@ -185,10 +190,14 @@ def run(args):
     policy = TwinHeuristic(cell_list=env.cellList, anchor_cells=tuple(args.anchor))
     obs, info = env.reset()
     for step in range(args.num_steps):
-        action = policy.act(env.observations)                 # named wide df of current state
+        seen = env.observations                               # wide df the policy decides on
+        action = policy.act(seen)
         obs, reward, terminated, truncated, info = env.step(action)
         on = sum(policy.state.values())
         print(f"step {step:3d}  action={action}  cells_on={on}  reward={reward:.0f}")
+        if os.environ.get("HEUR_DEBUG"):                      # per-cell decision trace for tuning
+            prb = {c: round(policy._v(seen, f"RRU_PRBTOTDL_{c}")) for c in policy.cells}
+            print(f"          prb%={prb}  low_streak={dict(policy.low_streak)}  cooldown={dict(policy.cooldown)}")
         if terminated or truncated:
             break
     env.close()
