@@ -77,7 +77,7 @@ def main():
                         bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=color, alpha=0.9))
 
     # "better" direction cue (up-and-right)
-    ax.annotate("BETTER\nmore energy saved,\nsame / more throughput",
+    ax.annotate("BETTER\nmore energy saved\n(compared at the SAME load)",
                 xy=(0.985, 0.96), xycoords="axes fraction", ha="right", va="top",
                 fontsize=10, fontweight="bold", color="#00795c",
                 bbox=dict(boxstyle="round", fc="#eafaf1", ec="#009E73"))
@@ -85,9 +85,10 @@ def main():
                 arrowprops=dict(arrowstyle="-|>", color="#009E73", lw=2.5))
 
     ax.axhline(0, ls="--", lw=1.5, color=MUTE)
-    ax.set_xlabel("Mean DL throughput (Mbps)   —   more = better QoS →", fontsize=11)
+    ax.set_xlabel("DL throughput carried (Mbps)   —   higher = more users / more traffic, NOT 'better service'",
+                  fontsize=10)
     ax.set_ylabel("↑ Energy saved vs 'all cells ON'  (%)", fontsize=11)
-    ax.set_title(args.title + "\neach dot = one simulation run;  y=0 (all cells on) = no energy saved",
+    ax.set_title(args.title + "\neach dot = one run at a DIFFERENT load (# users);  y=0 = all cells on (no saving)",
                  fontsize=12, fontweight="bold")
     ax.grid(alpha=0.3); ax.legend(loc="lower left", framealpha=0.95, title="policy")
     ax.margins(0.20)
