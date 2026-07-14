@@ -170,24 +170,59 @@ def main():
         import matplotlib
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+        import numpy as np
+        from matplotlib.colors import ListedColormap
+        from matplotlib.patches import Patch
+        BLUE, ORANGE, GREEN, GRAY, INK = "#0072B2", "#E69F00", "#009E73", "#D9D9D9", "#222222"
         per_cell, _ = read_bsstate(args.folder)
         util = read_mean_util(args.folder)
-        p_on = {c: args.p_static + args.alpha * util.get(c, 0.0) for c in per_cell}
+        cells = sorted(per_cell)
+        p_on = {c: args.p_static + args.alpha * util.get(c, 0.0) for c in cells}
         base_power = sum(p_on.values())                  # every cell ON (validated baseline)
         state_at = {c: dict(tl) for c, tl in per_cell.items()}
         ts = sorted({t for tl in per_cell.values() for t, _ in tl})
-        power = [sum(p_on[c] if state_at[c].get(t, 0) == 1 else args.p_sleep
-                     for c in per_cell) for t in ts]
+        power = [sum(p_on[c] if state_at[c].get(t, 0) == 1 else args.p_sleep for c in cells) for t in ts]
+        n_on = [sum(1 for c in cells if state_at[c].get(t, 0) == 1) for t in ts]
         saved = (base_power * len(ts) - sum(power)) / (base_power * len(ts)) * 100 if ts else 0.0
-        fig, ax = plt.subplots(figsize=(9, 4))
-        ax.step(ts, power, where="post", color="tab:blue", lw=1.8, label="controller power")
-        ax.axhline(base_power, ls="--", color="tab:red", label=f"all-on baseline ({base_power:.0f} W)")
-        ax.fill_between(ts, power, base_power, step="post", alpha=0.15, color="tab:green")
-        ax.set_xlabel("sim time (s)"); ax.set_ylabel("total RU power (W)")
-        ax.set_title(f"Energy over time - {os.path.basename(args.folder.rstrip('/'))}  "
-                     f"(~{saved:.0f}% saved; green = energy saved)")
-        ax.set_ylim(0, base_power * 1.12); ax.grid(alpha=0.3); ax.legend(loc="lower right")
-        fig.tight_layout(); fig.savefig(args.plot, dpi=120)
+        mat = np.array([[state_at[c].get(t, 0) for t in ts] for c in cells])
+        thr, _rlf = read_grafana_means(args.folder)
+        thr_txt = f"{thr:.1f} Mbps" if thr is not None else "n/a"
+
+        fig, (a1, a2, a3) = plt.subplots(3, 1, figsize=(11, 8.5), sharex=True,
+                                         gridspec_kw={"height_ratios": [3, 1.3, 2]})
+        # (1) power over time: controller vs all-on, shaded = saved
+        a1.axhline(base_power, ls="--", lw=2, color=ORANGE, label=f"all cells ON = {base_power:.0f} W")
+        a1.step(ts, power, where="post", lw=2.4, color=BLUE, label="with controller (sleeps idle cells)")
+        a1.fill_between(ts, power, base_power, step="post", color=GREEN, alpha=0.20)
+        a1.set_ylabel("total RU power (W)"); a1.set_ylim(0, base_power * 1.18)
+        a1.annotate(f"{saved:.0f}% less energy\n(shaded area = saved)",
+                    xy=(ts[len(ts) // 2], (min(power) + base_power) / 2), ha="center", va="center",
+                    fontsize=13, fontweight="bold", color=INK,
+                    bbox=dict(boxstyle="round", fc="white", ec=GREEN, alpha=0.9))
+        a1.legend(loc="lower right", framealpha=0.95); a1.grid(alpha=0.25)
+        a1.set_title(f"How the energy-saving controller behaves over time  "
+                     f"(6 UEs; QoS/throughput held at {thr_txt})", fontsize=13, fontweight="bold")
+        # (2) how many gNBs powered on
+        a2.step(ts, n_on, where="post", lw=2.2, color=BLUE)
+        a2.axhline(len(cells), ls=":", lw=1.5, color=ORANGE)
+        a2.set_ylabel("gNBs\npowered ON"); a2.set_ylim(0, len(cells) + 0.6)
+        a2.set_yticks(range(0, len(cells) + 1, 2)); a2.grid(alpha=0.25)
+        a2.annotate("all 7 = no saving", xy=(ts[-1], len(cells)), xytext=(-6, -12),
+                    textcoords="offset points", ha="right", fontsize=8, color=ORANGE)
+        # (3) which gNB is asleep, and when
+        dt = (ts[-1] - ts[0]) / (len(ts) - 1) if len(ts) > 1 else 0.1
+        x_edges = np.array(ts + [ts[-1] + dt]) - dt / 2
+        y_edges = np.arange(len(cells) + 1) - 0.5
+        a3.pcolormesh(x_edges, y_edges, mat, cmap=ListedColormap([GRAY, BLUE]), vmin=0, vmax=1)
+        a3.set_yticks(range(len(cells))); a3.set_yticklabels([f"cell {c}" for c in cells])
+        a3.invert_yaxis(); a3.set_ylabel("each gNB"); a3.set_xlabel("simulation time (seconds)")
+        a3.legend(handles=[Patch(color=BLUE, label="ON"), Patch(color=GRAY, label="asleep")],
+                  loc="center right", framealpha=0.95)
+        a3.set_title("Which gNBs are asleep, and when  (grey = asleep)", fontsize=10, loc="left", color=INK)
+        fig.suptitle(f"Energy saved ~{saved:.0f}%  -  idle cells (grey below) sleep, busy cells stay ON",
+                     fontsize=12, fontweight="bold", y=0.999)
+        fig.tight_layout(rect=[0, 0, 1, 0.985])
+        fig.savefig(args.plot, dpi=130)
         print(f"  plot saved: {args.plot}  (~{saved:.0f}% energy saved vs all-on)")
 
 
