@@ -1,0 +1,6 @@
+# generated RL artifacts (not source)
+demos/
+cfgs/
+ckpt/
+*.npz
+*.zip
