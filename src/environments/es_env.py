@@ -70,7 +70,6 @@ class EnergySavingEnv(NsOranEnv):
             'RRU_PRBTOTDL_2', 'RRU_PRBTOTDL_3', 'RRU_PRBTOTDL_4', 'RRU_PRBTOTDL_5', 'RRU_PRBTOTDL_6', 'RRU_PRBTOTDL_7', 'RRU_PRBTOTDL_8',
             'RRU.PrbUsedDl_2', 'RRU.PrbUsedDl_3', 'RRU.PrbUsedDl_4', 'RRU.PrbUsedDl_5', 'RRU.PrbUsedDl_6', 'RRU.PrbUsedDl_7', 'RRU.PrbUsedDl_8',
             'TB_TOTNBRDLINITIAL_64QAM_RATIO_2', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_3', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_4', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_5', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_6', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_7', 'TB_TOTNBRDLINITIAL_64QAM_RATIO_8',
-            'DRB.MeanActiveUeDl_2', 'DRB.MeanActiveUeDl_3', 'DRB.MeanActiveUeDl_4', 'DRB.MeanActiveUeDl_5', 'DRB.MeanActiveUeDl_6', 'DRB.MeanActiveUeDl_7', 'DRB.MeanActiveUeDl_8',
             'SUM_QosFlow.PdcpPduVolumeDL_Filter',
             'SUM_RLF_VALUE',
             'SUM_TB.TotNbrDl.1',
@@ -147,7 +146,7 @@ class EnergySavingEnv(NsOranEnv):
     @override
     def _get_obs(self):
         # ["cellId", "QOSFLOW_PDCPPDUVOLUMEDL_FILTER", "TB_TOTNBRDL_1", "L3servingSINR", "RRU_PRBUSEDDL", "TB_TOTNBRDLINITIAL_64QAM", "TB_TOTNBRDLINITIAL_QPSK", "TB_TOTNBRDLINITIAL_16QAM", "ES_STATE"] #Database (1=ON, 0=OFF), Mavnenir(1=OFF, 0=ON)
-        kpms_raw = ["nrCellId", "QosFlow.PdcpPduVolumeDL_Filter", "TB.TotNbrDl.1", "L3 serving SINR", "RRU.PrbUsedDl", "TB.TotNbrDlInitial.64Qam", "TB.TotNbrDlInitial.Qpsk", "TB.TotNbrDlInitial.16Qam", "DRB.MeanActiveUeDl"]       
+        kpms_raw = ["nrCellId", "QosFlow.PdcpPduVolumeDL_Filter", "TB.TotNbrDl.1", "L3 serving SINR", "RRU.PrbUsedDl", "TB.TotNbrDlInitial.64Qam", "TB.TotNbrDlInitial.Qpsk", "TB.TotNbrDlInitial.16Qam"]       
         ue_kpms = self.datalake.read_kpms(self.last_timestamp, kpms_raw) 
         self._update_cell_states()  
         # Now cells_states is updated with state of latest cells           

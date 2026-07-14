@@ -218,7 +218,6 @@ def _selftest():
             row[f"QosFlow.PdcpPduVolumeDL_Filter_{c}"] = p * 1000 * thr_scale
             row[f"TB_TOTNBRDLINITIAL_64QAM_RATIO_{c}"] = 0.6
             row[f"RLF_VALUE_{c}"] = rlf
-            row[f"DRB.MeanActiveUeDl_{c}"] = 1.0 if p < 20 else 3.0   # active-UEs proxy
         row["SUM_QosFlow.PdcpPduVolumeDL_Filter"] = sum(
             row[f"QosFlow.PdcpPduVolumeDL_Filter_{c}"] for c in CELL_LIST)
         row["SUM_RLF_VALUE"] = rlf * len(CELL_LIST)
