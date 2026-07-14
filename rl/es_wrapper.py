@@ -9,14 +9,15 @@ Design choices:
     - the same, already-verified path the TwinHeuristic uses. This avoids the
     Discrete(64) index + ON/OFF-inversion mapping.
   * Observation = Box over the env's `columns_state` (61 features), float32,
-    NaN/inf-scrubbed. Normalize at train time with SB3 VecNormalize.
-  * Reward (reward_mode='power', the default for RL): a power-model tradeoff
+    NaN/inf-scrubbed. Normalize at train time (see rl/train_bc.py obs stats).
+  * Reward (reward_mode='power', the RL default): a power-model tradeoff
         reward = throughput_Mbps - w_energy * power_kW - w_rlf * RLF
-    computed from the observation using the same power model as plot_energy
-    (P_on = P_static + alpha*util; slept cells draw 0). This makes the agent
-    optimize REAL energy-vs-QoS - i.e. the exact axes of the tradeoff scoreboard,
-    so "beating the heuristic" means beating it on the plotted metric.
-    reward_mode='env' falls back to the environment's native reward.
+    computed from the observation with the same power model as plot_energy, so
+    the agent optimizes the same energy-vs-QoS axes the scoreboard plots.
+  * Episode termination: the base env never sets terminated/truncated, so we
+    truncate after `max_episode_steps` (kept safely below the sim length) OR when
+    is_simulation_over() -> this gives PPO clean fixed-length episodes with proper
+    resets (a fresh ns-3 launch each episode) instead of stepping a dead sim.
 
 EnergySavingEnv itself defines no gym spaces, so this wrapper supplies them.
 """
@@ -28,7 +29,6 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-# make `environments`/`nsoran` importable regardless of CWD
 _SRC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
@@ -42,26 +42,26 @@ class EnergySavingRLEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, ns3_path, config, output_folder="output", optimized=True,
-                 anchor_idx=0, reward_mode="power",
+                 anchor_idx=0, reward_mode="power", max_episode_steps=58,
                  p_static=600.0, alpha=400.0, w_energy=1.0, w_rlf=2.0):
         super().__init__()
         with open(config) as f:
             cfg = json.load(f)
-        # do_heuristic=True => env applies a raw 7-bit [s2..s8] action (1=ON) directly.
         self.env = EnergySavingEnv(
             ns3_path=ns3_path, scenario_configuration=cfg,
             output_folder=output_folder, optimized=optimized, do_heuristic=True,
         )
         self.columns_state = list(self.env.columns_state)
-        self.cell_list = list(self.env.cellList)          # [2..8]
-        self.n_cells = len(self.cell_list)                # 7
-        self.anchor_idx = anchor_idx                      # cell 2 -> index 0
+        self.cell_list = list(self.env.cellList)
+        self.n_cells = len(self.cell_list)
+        self.anchor_idx = anchor_idx
+        self.max_episode_steps = int(max_episode_steps)
+        self._t = 0
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(len(self.columns_state),), dtype=np.float32)
         self.action_space = spaces.MultiBinary(self.n_cells)
         self._last_vec = np.zeros(len(self.columns_state), dtype=np.float32)
 
-        # --- reward model ---
         self.reward_mode = reward_mode
         self.p_static, self.alpha = p_static, alpha
         self.w_energy, self.w_rlf = w_energy, w_rlf
@@ -71,7 +71,6 @@ class EnergySavingRLEnv(gym.Env):
         self._i_prb = [cs.index(f"RRU_PRBTOTDL_{c}") for c in self.cell_list]
 
     def _vec(self, raw):
-        """env._get_obs() returns [tuple(columns_state values)] -> clean float32 vector."""
         try:
             arr = np.asarray(raw[0], dtype=np.float32)
         except Exception:
@@ -81,18 +80,24 @@ class EnergySavingRLEnv(gym.Env):
         return arr
 
     def _power_reward(self, vec, action_bits):
-        """throughput_Mbps - w_energy*power_kW - w_rlf*RLF (power model = plot_energy)."""
-        thr_mbps = float(vec[self._i_thr]) * 10.0 / 1e6      # SUM_QosFlow -> Mbps (grafana convention)
+        thr_mbps = float(vec[self._i_thr]) * 10.0 / 1e6
         power_w = 0.0
         for i in range(self.n_cells):
-            if action_bits[i] == 1:                          # cell ON draws static + load power
-                util = max(float(vec[self._i_prb[i]]), 0.0) / 100.0   # RRU_PRBTOTDL is a percentage
+            if action_bits[i] == 1:
+                util = max(float(vec[self._i_prb[i]]), 0.0) / 100.0
                 power_w += self.p_static + self.alpha * util
         rlf = float(vec[self._i_rlf])
         return thr_mbps - self.w_energy * (power_w / 1000.0) - self.w_rlf * rlf
 
+    def _sim_over(self):
+        try:
+            return bool(self.env.is_simulation_over())
+        except Exception:
+            return False
+
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
+        self._t = 0
         obs, info = self.env.reset()
         return self._vec(obs), (info or {})
 
@@ -100,11 +105,12 @@ class EnergySavingRLEnv(gym.Env):
         a = [int(x) for x in np.asarray(action).reshape(-1)[: self.n_cells]]
         a[self.anchor_idx] = 1                            # anchor never sleeps
         obs, env_reward, terminated, truncated, info = self.env.step(a)
+        self._t += 1
         vec = self._vec(obs)
         reward = self._power_reward(vec, a) if self.reward_mode == "power" else float(env_reward)
-        if isinstance(info, dict):
-            info = {**info, "env_reward": float(env_reward)}
-        return vec, float(reward), bool(terminated), bool(truncated), (info or {})
+        truncated = bool(truncated or self._t >= self.max_episode_steps or self._sim_over())
+        info = {**(info or {}), "env_reward": float(env_reward)}
+        return vec, float(reward), bool(terminated), truncated, info
 
     def close(self):
         try:
@@ -114,5 +120,4 @@ class EnergySavingRLEnv(gym.Env):
 
 
 def make_env(ns3_path, config, **kw):
-    """Factory (handy for SB3 DummyVecEnv([lambda: make_env(...)]))."""
     return EnergySavingRLEnv(ns3_path=ns3_path, config=config, **kw)
