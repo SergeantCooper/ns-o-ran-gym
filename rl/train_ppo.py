@@ -47,6 +47,7 @@ def main():
     ap.add_argument("--timesteps", type=int, default=512)
     ap.add_argument("--w_energy", type=float, default=1.0)
     ap.add_argument("--w_rlf", type=float, default=2.0)
+    ap.add_argument("--ent_coef", type=float, default=0.0, help="entropy bonus (exploration)")
     args = ap.parse_args()
 
     s = np.load(args.stats)
@@ -54,6 +55,8 @@ def main():
                     dict(w_energy=args.w_energy, w_rlf=args.w_rlf))
     # warm-start: load the BC-pretrained policy + hyperparams, attach the live env
     model = PPO.load(args.bc, env=env, device="cpu")
+    model.verbose = 1                        # show per-rollout reward trend
+    model.ent_coef = args.ent_coef           # exploration nudge to escape the BC/heuristic behavior
     ckpt = CheckpointCallback(save_freq=max(1, model.n_steps),
                               save_path="rl/ckpt", name_prefix="ppo")
     print(f"PPO fine-tune: n_steps={model.n_steps}, total_timesteps={args.timesteps} "
