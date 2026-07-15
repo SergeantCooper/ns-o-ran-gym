@@ -30,7 +30,7 @@ realistic route to a genuine clean win (a spatial-hotspot scenario).
 | **Expert heuristic** | `heuristic_twin.py` — load-adaptive: sleeps idle cells, wakes on neighbour load, with hysteresis/guardrails. |
 | **Learning pipeline** | Behaviour Cloning (imitate the expert) → PPO (improve on a power-model reward). All in `ns-o-ran-gym/rl/`. |
 | **Energy model** | Per gNB: P = 600 W static + 400 W × utilisation; sleep ≈ 0 W. |
-| **Metrics** | `plot_energy.py` (energy, % saved, throughput, RLF), `plot_tradeoff.py` / `plot_summary.py` (energy-vs-QoS scatter). |
+| **Metrics** | `plot_energy.py` (energy, % saved, throughput, RLF), `plot_frontier.py` / `plot_summary.py` (energy-vs-QoS scatter). |
 
 ---
 

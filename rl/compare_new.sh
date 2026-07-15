@@ -34,10 +34,6 @@ echo; echo "FOLDERS: HEU=$HEU  RL=$RL  P2=$P2  P1=$P1"
 echo; echo "=== per-run metrics (throughput / % saved / RLF / gNBs) ==="
 for f in "$HEU" "$RL" "$P2" "$P1"; do echo "-- $f"; $PY plot_energy.py "$f" 2>&1 | grep -vi "$FLT" | tail -7; done
 
-echo; echo "=== tradeoff overlay ==="
-ALLON=$(cat rl/allon_baseline_folder.txt)
-$PY plot_tradeoff.py "all-on@6UEs=$ALLON" "heuristic@6UEs=$HEU" "rl@6UEs=$RL" \
-    "prune-g2@6UEs=$P2" "prune-g1@6UEs=$P1" \
-    --out tradeoff_new.png --title "New scenario @6 UEs: heuristic vs PPO vs targeted pruning" \
-    2>&1 | grep -vi "$FLT"
-echo "=== COMPARE DONE -> tradeoff_new.png ==="
+echo; echo "Folders + metrics printed above. Figures are generated separately by"
+echo "plot_frontier.py (per-seed detail) and plot_summary.py (4-seed averages)."
+echo "=== COMPARE DONE ==="

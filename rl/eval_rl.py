@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """eval_rl.py - run a trained SB3 policy on the twin (deterministic) for one
 episode and report where its output landed, so it can be scored with plot_energy
-and overlaid on plot_tradeoff (as e.g. rl@6UEs=<folder>).
+and overlaid on the tradeoff figure (plot_frontier.py / plot_summary.py).
 """
 import argparse
 import glob

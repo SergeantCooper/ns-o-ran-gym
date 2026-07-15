@@ -12,7 +12,7 @@ Two modes:
                is loaded, or failing (RLF>0), or within `grace` steps of its last
                activity. Tests whether waking can be driven by observations alone.
 
-Reports its output folder so it can be scored with plot_energy / plot_tradeoff.
+Reports its output folder so it can be scored with plot_energy / plot_frontier.
 """
 import argparse
 import glob

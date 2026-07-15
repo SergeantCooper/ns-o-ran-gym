@@ -42,9 +42,5 @@ for f in "$RL555" "$HEU555" "$RL1234" "$HEU1234"; do
   echo "-- $f"; $PY plot_energy.py "$f" 2>&1 | grep -vi "$FLT" | tail -8
 done
 
-ALLON=$(cat rl/allon_baseline_folder.txt)
-echo; echo "=== tradeoff overlay (seed 555) ==="
-$PY plot_tradeoff.py "all-on@6UEs=$ALLON" "heuristic@6UEs=$HEU555" "rl@6UEs=$RL555" \
-    --out tradeoff_new.png --title "New (burst) scenario: RL vs heuristic @ 6 UEs" \
-    2>&1 | grep -vi "$FLT"
-echo "=== EVAL DONE -> tradeoff_new.png ==="
+echo; echo "Folders + metrics printed above. Figures via plot_frontier.py / plot_summary.py."
+echo "=== EVAL DONE ==="
