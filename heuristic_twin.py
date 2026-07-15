@@ -44,6 +44,9 @@ DEFAULT_CFG = dict(
                                        # anchor-adjacent cell sits at ~75-84% PRB, which would wake idle
                                        # neighbours every step; 90% reserves wake-up for real overload.
     neigh_future_max=70.0, anchor_spare=50.0,   # Step 7 feasibility
+    min_offload=1.0,                   # < this PRB%/neighbour offloaded => cell is ~idle,
+                                       # so sleeping it is always safe (fixes idle cells being
+                                       # pinned ON when neighbours are busy, e.g. in hotspots)
     g_thr_loss=5.0, g_rlf_rise=5.0,    # Step 14 guardrails
 )
 
@@ -83,6 +86,12 @@ class TwinHeuristic:
         if not on:
             return False
         offload = prb[c] / len(on)
+        # A cell carrying ~no traffic offloads ~nothing when slept, so it can never push a
+        # neighbour over the limit (and needs no capacity neighbour to absorb traffic) ->
+        # always safe to sleep. Without this, an idle cell was wrongly pinned ON whenever any
+        # neighbour was already busy (>= neigh_future_max), which never relaxes in a hotspot.
+        if offload < self.cfg["min_offload"]:
+            return True
         if any(prb[n] + offload >= self.cfg["neigh_future_max"] for n in on):
             return False
         for n in on:
