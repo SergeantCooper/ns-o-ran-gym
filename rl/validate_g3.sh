@@ -43,4 +43,11 @@ for name,ff in [("heuristic","$LOG/heu_folders.txt"),("prune-g3","$LOG/g3_folder
     a=np.array(rows)
     print(f"{name:10s}  n={len(rows)}  saved%={a[:,0].mean():5.1f}  thr={a[:,1].mean():.2f} Mbps  RLF={a[:,2].mean():.2f}   (per-seed saved%: {[round(x,1) for x in a[:,0]]})")
 PYEOF
-echo "=== VALIDATE DONE ==="
+# write the summary manifest (folder pointers only) + render live
+ALLON=$(cat rl/allon_baseline_folder.txt)
+{ printf 'allon\t%s\n' "$ALLON"
+  awk 'NF{print "heur\t"$0}'  "$LOG/heu_folders.txt"
+  awk 'NF{print "prune\t"$0}' "$LOG/g3_folders.txt"
+} > rl/summary_runs.tsv
+$PY plot_summary.py 2>&1 | grep -vi "$FLT"
+echo "=== VALIDATE DONE -> summary_tradeoff.png (numbers computed live from folders) ==="

@@ -1,0 +1,7 @@
+allon	all-on	output/e9c18807-1967-49ec-8b96-e13ab4ba4d85/
+heur	heuristic=PPO	output/c5ae5296-5d0b-4dc5-8ba8-8422cbb5b017/
+prune	g8	output/2f694c17-993f-4a8b-adbd-b7cb55d3da9d/
+prune	g5	output/a85afe28-8e73-4a8f-af1c-f3aff7996dd9/
+prune	g3	output/8b5aac85-c425-4319-839b-d26901681cf5/
+prune	g2	output/ff6f2015-6bdf-4060-9b15-5cdc12a9ce18/
+prune	g1	output/5ceab7d8-2eb1-4e4b-b3a6-5e8d01217c44/
