@@ -52,7 +52,7 @@ class TimeLimit(BaseCallback):
 def build_env(ns3_path, config, mean, std, reward_kw):
     # Monitor -> episode-reward logging (ep_rew_mean); NormObs -> fixed obs normalization.
     return DummyVecEnv([lambda: Monitor(NormObs(
-        EnergySavingRLEnv(ns3_path=ns3_path, config=config, reward_mode="power", **reward_kw),
+        EnergySavingRLEnv(ns3_path=ns3_path, config=config, **reward_kw),
         mean, std))])
 
 
@@ -67,12 +67,16 @@ def main():
     ap.add_argument("--max_hours", type=float, default=0.0, help="wall-clock cap; 0 = NO time-cancel (run to --timesteps)")
     ap.add_argument("--w_energy", type=float, default=1.0)
     ap.add_argument("--w_rlf", type=float, default=2.0)
+    ap.add_argument("--reward_mode", default="power_shaped",
+                    help="'power' (global) or 'power_shaped' (adds potential-based idle-sleep credit)")
+    ap.add_argument("--shape_coef", type=float, default=0.3, help="reward-shaping strength")
     ap.add_argument("--ent_coef", type=float, default=0.0, help="entropy bonus (exploration)")
     args = ap.parse_args()
 
     s = np.load(args.stats)
     env = build_env(args.ns3_path, args.config, s["mean"], s["std"],
-                    dict(w_energy=args.w_energy, w_rlf=args.w_rlf))
+                    dict(w_energy=args.w_energy, w_rlf=args.w_rlf,
+                         reward_mode=args.reward_mode, shape_coef=args.shape_coef))
     model = PPO.load(args.bc, env=env, device="cpu")
     model.verbose = 1                        # print rollout table incl. ep_rew_mean
     model.ent_coef = args.ent_coef           # exploration nudge
