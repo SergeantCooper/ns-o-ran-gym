@@ -7,7 +7,7 @@ Runs are given either on the command line or (default) read from a manifest file
 
     # explicit:
     python3 plot_frontier.py allon@all-on=output/<uuid> heur@heuristic=PPO=output/<uuid> \
-                             prune@g3=output/<uuid> ...  --out tradeoff_new.png
+                             prune@g3=output/<uuid> ...  --out tradeoff.png
     # or from a manifest (TSV: 'group<TAB>tag<TAB>folder' per line):
     python3 plot_frontier.py                          # reads rl/frontier_runs.tsv
 
@@ -51,7 +51,7 @@ def metrics(folder):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("runs", nargs="*", help="group@tag=folder (else read rl/frontier_runs.tsv)")
-    ap.add_argument("--out", default="tradeoff_new.png")
+    ap.add_argument("--out", default="tradeoff.png")
     a = ap.parse_args()
 
     rows = []  # (tag, thr, saved, rlf, on, group)
@@ -75,8 +75,8 @@ def main():
     ax = fig.add_subplot(gs[0, 0]); axt = fig.add_subplot(gs[0, 1]); axt.axis("off")
 
     # leader-line offsets keyed by tag (tags are stable across re-runs)
-    OFF = {"all-on": (8, -22), "heuristic=PPO": (44, 20), "g8": (-14, -34),
-           "g5": (-52, -6), "g3": (16, 8), "g2": (12, 22), "g1": (-12, 26)}
+    OFF = {"all-on": (8, -22), "heuristic=PPO": (44, 20), "g8": (-16, -30),
+           "g5": (-52, -6), "g3": (16, 8), "g2": (26, 12), "g1": (-4, 15)}
     for tag, thr, saved, rlf, on, group in rows:
         ax.scatter(thr, saved, s=230, color=C.get(group, "#999999"),
                    edgecolor="white", lw=1.6, zorder=3)
@@ -86,12 +86,13 @@ def main():
                     arrowprops=dict(arrowstyle="-", color=MUTE, lw=0.8),
                     bbox=dict(boxstyle="round,pad=0.25", fc="white",
                               ec=C.get(group, "#999999"), alpha=0.95))
-    ax.set_xlabel("DL throughput (Mbps)  —  higher = better QoS", fontsize=10)
+    ax.set_xlabel("DL throughput (Mbps)  —  higher = better QoS  "
+                  "(pruning saves more energy but sits to the LEFT = less throughput)", fontsize=9)
     ax.set_ylabel("↑ Energy saved vs all cells ON (%)", fontsize=11)
-    ax.set_title("Seed 555: energy vs throughput\n"
-                 "(pruning saves more energy but to the LEFT = less throughput)",
-                 fontsize=11, fontweight="bold")
+    ax.set_title("Seed 555 (single seed; 4-seed averages in summary_tradeoff.png)",
+                 fontsize=10, fontweight="bold", pad=12)
     ax.grid(alpha=0.3)
+    ax.set_xlim(4.88, 6.32); ax.set_ylim(-4, 66)   # headroom so top labels clear the title
     seen = []
     for _, _, _, _, _, g in rows:
         if g not in seen:

@@ -40,4 +40,4 @@ ALLON=$(cat rl/allon_baseline_folder.txt)
   printf 'prune\tg1\t%s\n'            "$G1"
 } > rl/frontier_runs.tsv
 $PY plot_frontier.py 2>&1 | grep -vi "$FLT"
-echo "=== SWEEP DONE -> tradeoff_new.png (numbers computed live from folders) ==="
+echo "=== SWEEP DONE -> tradeoff.png (numbers computed live from folders) ==="

@@ -162,7 +162,7 @@ PYTHONPATH=src $PY rl/train_bc.py --demos rl/demos.npz
 PYTHONPATH=src $PY rl/train_ppo.py --config $CFG --timesteps 640 --ent_coef 0.01
 # 4) evaluate + compare + frontier + multi-seed validation
 bash rl/compare_new.sh        # heuristic vs PPO vs pruning (seed 555)
-bash rl/sweep_grace.sh        # pruning frontier -> writes rl/frontier_runs.tsv + tradeoff_new.png
+bash rl/sweep_grace.sh        # pruning frontier -> writes rl/frontier_runs.tsv + tradeoff.png
 bash rl/validate_g3.sh        # multi-seed -> writes rl/summary_runs.tsv + summary_tradeoff.png
 ```
 
@@ -187,7 +187,7 @@ throughput + reliability). Full explanation in `RESULTS.md`.
 ## 9. Regenerate the figures (numbers computed live from run folders)
 
 ```bash
-$PY plot_frontier.py     # reads rl/frontier_runs.tsv -> tradeoff_new.png
+$PY plot_frontier.py     # reads rl/frontier_runs.tsv -> tradeoff.png
 $PY plot_summary.py      # reads rl/summary_runs.tsv  -> summary_tradeoff.png
 ```
 Both read a **manifest of run folders** (not hard-coded numbers) and recompute every metric via
