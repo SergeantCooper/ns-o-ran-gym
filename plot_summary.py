@@ -1,43 +1,50 @@
 #!/usr/bin/env python3
-"""plot_summary.py - honest averaged summary of the new (burst) scenario results,
-over seeds 555/777/999/1234. Two panels: energy saved vs throughput, and energy
-saved vs RLF (reliability). Shows the heuristic (= the tied PPO policy) and the
-aggressive pruning controller as points on the SAME energy-vs-QoS frontier."""
+"""plot_summary.py - single-panel honest summary of the new (burst) scenario,
+averaged over 4 seeds (555/777/999/1234). One scatter: energy saved (y) vs
+throughput (x); each point also carries its RLF (dropped calls) in the label, and
+an arrow shows the heuristic->pruning trade. All-on is the reference at 0% saved."""
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# averaged over 4 seeds
-pts = {  # name: (throughput Mbps, energy saved %, RLF, color)
-    "all cells on":       (6.10, 0.0,  0.00, "#E69F00"),
-    "heuristic (= PPO)":  (5.68, 33.8, 1.20, "#0072B2"),
-    "pruning g=3":        (5.25, 52.9, 2.36, "#009E73"),
+# 4-seed averages: (label, throughput Mbps, energy saved %, RLF, color, label-offset)
+P = {
+    "allon": ("all cells on\n(reference)",         6.10,  0.0, 0.00, "#E69F00", (-140, 10)),
+    "heur":  ("heuristic  =  PPO\n(RL ties it)",    5.68, 33.8, 1.20, "#0072B2", (18, -30)),
+    "prune": ("pruning (aggressive)",               5.25, 52.9, 2.36, "#009E73", (14, 6)),
 }
 INK, MUTE = "#222222", "#666666"
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6))
+fig, ax = plt.subplots(figsize=(10.5, 7))
 
-for ax, xi, xlabel, xinv in [
-    (ax1, 0, "DL throughput (Mbps)  —  higher = better QoS", False),
-    (ax2, 2, "Radio-link failures (RLF)  —  lower = better QoS", True)]:
-    for name, v in pts.items():
-        ax.scatter(v[xi], v[1], s=260, color=v[3], edgecolor="white", lw=1.5, zorder=3)
-        ax.annotate(f"{name}\n{v[1]:.0f}% saved\n{v[0]:.2f} Mbps, RLF {v[2]:.2f}",
-                    (v[xi], v[1]), textcoords="offset points", xytext=(10, 10),
-                    fontsize=9, color=INK,
-                    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=v[3], alpha=0.9))
-    ax.set_xlabel(xlabel, fontsize=10)
-    ax.set_ylabel("↑ Energy saved vs all-on (%)", fontsize=11)
-    ax.grid(alpha=0.3)
-    ax.set_ylim(-5, 65)
-    if xinv:
-        ax.invert_xaxis()  # so "better QoS" (low RLF) is on the right in both panels
+for name, thr, saved, rlf, col, off in P.values():
+    ax.scatter(thr, saved, s=320, color=col, edgecolor="white", lw=2, zorder=4)
+    ax.annotate(f"{name}\n{saved:.0f}% energy saved  |  {thr:.2f} Mbps  |  RLF {rlf:.2f}",
+                (thr, saved), textcoords="offset points", xytext=off,
+                fontsize=10, color=INK, zorder=5,
+                bbox=dict(boxstyle="round,pad=0.35", fc="white", ec=col, lw=1.5, alpha=0.97))
 
-ax1.set_title("More energy needs less throughput", fontsize=11, fontweight="bold")
-ax2.set_title("More energy costs more dropped calls", fontsize=11, fontweight="bold")
-fig.suptitle("New burst scenario @6 UEs (avg of 4 seeds): heuristic is near the efficient "
-             "energy-vs-QoS frontier\nPPO ties it; pruning trades QoS for more energy — no point "
-             "strictly beats the heuristic",
-             fontsize=12, fontweight="bold")
-fig.tight_layout(rect=[0, 0, 1, 0.94])
+# the trade: heuristic -> pruning
+h, p = P["heur"], P["prune"]
+ax.annotate("", xy=(p[1], p[2]), xytext=(h[1], h[2]),
+            arrowprops=dict(arrowstyle="-|>", color="#888888", lw=2.4,
+                            connectionstyle="arc3,rad=-0.15"), zorder=2)
+ax.annotate("the trade:\n+19 pts energy saved\nBUT −0.4 Mbps  &  ~2× dropped calls",
+            xy=(5.44, 45), fontsize=9.5, color="#666666", ha="center", style="italic",
+            bbox=dict(boxstyle="round,pad=0.3", fc="#f4f4f4", ec="#bbbbbb"))
+
+ax.set_xlabel("DL throughput carried (Mbps)   —   → right = better QoS", fontsize=11)
+ax.set_ylabel("↑ Energy saved vs 'all cells on' (%)", fontsize=11)
+ax.set_title("New burst scenario @6 UEs — averaged over 4 seeds\n"
+             "The heuristic is near the efficient energy-vs-QoS frontier: PPO ties it, "
+             "and\nsaving more energy (pruning) costs throughput AND reliability — no clean win",
+             fontsize=11.5, fontweight="bold")
+ax.grid(alpha=0.3)
+ax.set_xlim(5.05, 6.35); ax.set_ylim(-6, 62)
+# "better" corner cue
+ax.annotate("BETTER\n(more energy, same QoS)\n— no policy reaches here",
+            xy=(0.985, 0.97), xycoords="axes fraction", ha="right", va="top",
+            fontsize=9.5, fontweight="bold", color="#00795c",
+            bbox=dict(boxstyle="round", fc="#eafaf1", ec="#009E73"))
+fig.tight_layout()
 fig.savefig("summary_tradeoff.png", dpi=130)
 print("saved: summary_tradeoff.png")
