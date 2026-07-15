@@ -43,7 +43,8 @@ class EnergySavingRLEnv(gym.Env):
 
     def __init__(self, ns3_path, config, output_folder="output", optimized=True,
                  anchor_idx=0, reward_mode="power", max_episode_steps=58,
-                 p_static=600.0, alpha=400.0, w_energy=1.0, w_rlf=2.0):
+                 p_static=600.0, alpha=400.0, w_energy=1.0, w_rlf=2.0,
+                 idle_thr=3.0, shape_coef=0.3, gamma=0.99):
         super().__init__()
         with open(config) as f:
             cfg = json.load(f)
@@ -65,6 +66,8 @@ class EnergySavingRLEnv(gym.Env):
         self.reward_mode = reward_mode
         self.p_static, self.alpha = p_static, alpha
         self.w_energy, self.w_rlf = w_energy, w_rlf
+        self.idle_thr, self.shape_coef, self.gamma = idle_thr, shape_coef, gamma
+        self._prev_phi = 0.0   # potential-based shaping state (reward_mode='power_shaped')
         cs = self.columns_state
         self._i_thr = cs.index("SUM_QosFlow.PdcpPduVolumeDL_Filter")
         self._i_rlf = cs.index("SUM_RLF_VALUE")
@@ -89,6 +92,17 @@ class EnergySavingRLEnv(gym.Env):
         rlf = float(vec[self._i_rlf])
         return thr_mbps - self.w_energy * (power_w / 1000.0) - self.w_rlf * rlf
 
+    def _potential(self, vec, action_bits):
+        """Potential Phi(s) = -(# ON non-anchor cells carrying ~no traffic). Higher (less
+        negative) when idle cells are asleep. Potential-based shaping term gamma*Phi(s')-Phi(s)
+        gives an immediate, per-cell reward for sleeping an idle cell WITHOUT changing the
+        optimal policy (Ng et al. 1999) - it just makes the credit dense instead of buried in
+        the noisy global energy/RLF signal, which is what stalled learning."""
+        idle_on = sum(1 for i in range(self.n_cells)
+                      if action_bits[i] == 1 and i != self.anchor_idx
+                      and float(vec[self._i_prb[i]]) < self.idle_thr)
+        return -float(idle_on)
+
     def _sim_over(self):
         try:
             return bool(self.env.is_simulation_over())
@@ -98,6 +112,7 @@ class EnergySavingRLEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self._t = 0
+        self._prev_phi = 0.0
         obs, info = self.env.reset()
         return self._vec(obs), (info or {})
 
@@ -107,7 +122,14 @@ class EnergySavingRLEnv(gym.Env):
         obs, env_reward, terminated, truncated, info = self.env.step(a)
         self._t += 1
         vec = self._vec(obs)
-        reward = self._power_reward(vec, a) if self.reward_mode == "power" else float(env_reward)
+        if self.reward_mode in ("power", "power_shaped"):
+            reward = self._power_reward(vec, a)
+            if self.reward_mode == "power_shaped":       # + potential-based idle-sleep credit
+                phi = self._potential(vec, a)
+                reward += self.shape_coef * (self.gamma * phi - self._prev_phi)
+                self._prev_phi = phi
+        else:
+            reward = float(env_reward)
         truncated = bool(truncated or self._t >= self.max_episode_steps or self._sim_over())
         info = {**(info or {}), "env_reward": float(env_reward)}
         return vec, float(reward), bool(terminated), truncated, info
