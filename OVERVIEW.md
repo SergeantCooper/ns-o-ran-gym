@@ -242,7 +242,7 @@ step, `RESULTS.md` §4). Figures: `tradeoff.png`, `summary_tradeoff.png`, `energ
 | **`OVERVIEW.md`** (this file) | whole-project map + how it works | current |
 | **`RESULTS.md`** | findings, numbers, why, next step | current |
 | **`REPRODUCE.md`** | build + run from zero | current |
-| `HANDOFF.md`, `MILESTONE1_CHECKS.txt`, `PROJECT_HANDOFF.md`, `RL_APPROACH_RECOMMENDATION.md` | earlier-phase notes | **superseded** — historical only |
+| `HANDOFF.md`, `MILESTONE1_CHECKS.txt`, `PROJECT_HANDOFF.md`, `RL_APPROACH_RECOMMENDATION.md` | earlier-phase notes | **superseded** — archived in `work.zip`, not in the tree |
 
 ---
 
