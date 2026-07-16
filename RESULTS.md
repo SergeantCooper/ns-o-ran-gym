@@ -146,3 +146,46 @@ Key scripts: `heuristic_twin.py`, `rl/train_bc.py` (BC + critic warm-up), `rl/tr
   of the energy-vs-QoS tradeoff, and a tunable controller that extends the energy frontier
   beyond the heuristic at a measured QoS cost.
 - The concrete, realistic path to a genuine clean win is a **spatial-hotspot scenario**.
+
+---
+
+## 7. Update (2026-07-16): heuristic fix, reward shaping, and a promising RL result
+
+*This section supersedes §6's "we did not beat the heuristic" for the work below — a controlled
+re-test is in progress; numbers here are preliminary until it lands.*
+
+**What changed since §1–6:**
+1. **Hotspot scenario added** (config-only: `positionAllocator=1, nBsNoUesAlloc=3`) — clusters users
+   on 4 cells, leaving ~3 *structurally idle*. Its cell-shuffle is now seeded from `RngRun`
+   (reproducible; was wall-clock-seeded).
+2. **Heuristic fix** (`heuristic_twin.py`, `min_offload`): idle cells are always feasible to sleep
+   (previously an idle cell was pinned ON whenever a neighbour was busy ≥70%). Right for the hotspot,
+   but **too aggressive on bursty traffic** — it over-sleeps *momentarily*-idle cells, dropping the
+   heuristic's throughput (~5.68→~4.2–4.8 Mbps) and raising RLF. A `--min_offload 0` flag restores
+   the original balanced heuristic.
+3. **Improved reward** (`rl/es_wrapper.py`, `reward_mode=power_shaped`): potential-based shaping that
+   gives dense, per-cell credit for sleeping idle cells (does not change the optimum). PPO retrained
+   with it — trained cleanly (no collapse), reward 14.5→28.7.
+
+**Eval — shaped-PPO vs the (over-aggressive) FIXED heuristic, uniform-burst scenario:**
+
+| seed | policy | energy saved | throughput | RLF |
+|---|---|---|---|---|
+| 555 | RL (shaped) | 24.8% | **5.92** | **0.07** |
+| 555 | fixed heuristic | 43.9% | 4.23 | 1.26 |
+| 1234 | **RL (shaped)** | **46.2%** | **5.95** | **0.67** |
+| 1234 | fixed heuristic | 36.2% | 4.75 | 1.52 |
+
+- RL learned a **distinctly higher-QoS policy** (throughput ~5.9 vs ~4.2–4.8; RLF ~0.07–0.67 vs
+  ~1.26–1.52) on both seeds, and on held-out **seed 1234 it flat-out dominates** (more energy AND
+  more throughput AND fewer drops).
+- **Caveat:** the FIXED heuristic is over-aggressive, so part of this is "RL beats an over-sleeping
+  baseline." RL's numbers (~35% avg saved, ~5.9 Mbps, RLF ~0.4) *also* look better than the
+  **original** heuristic (§2: 34% / 5.68 / 1.20) on all three axes — but that needs a controlled test.
+
+**In progress (`rl/compare_clean.sh`):** RL (shaped) vs the **original** balanced heuristic
+(`--min_offload 0`) on 4 seeds (555/777/999/1234), averaged. **This is the definitive "does RL beat
+the heuristic" test.** Verdict pending — will be filled in here when it completes.
+
+> Preliminary status: **promising** — RL appears to win on QoS and hold/beat on energy, but the
+> clean multi-seed comparison against the *balanced* heuristic is the number that counts.
