@@ -196,7 +196,9 @@ def run(args):
                           output_folder=args.output_folder,
                           optimized=args.optimized,
                           do_heuristic=True)
-    policy = TwinHeuristic(cell_list=env.cellList, anchor_cells=tuple(args.anchor))
+    hcfg = ({"min_offload": args.min_offload}
+            if getattr(args, "min_offload", None) is not None else None)
+    policy = TwinHeuristic(cell_list=env.cellList, anchor_cells=tuple(args.anchor), cfg=hcfg)
     obs, info = env.reset()
     for step in range(args.num_steps):
         seen = env.observations                               # wide df the policy decides on
@@ -257,6 +259,8 @@ if __name__ == "__main__":
     p.add_argument("--num_steps", type=int, default=120)
     p.add_argument("--anchor", type=int, nargs="+", default=[2], help="cell id(s) that never sleep")
     p.add_argument("--optimized", action="store_true")
+    p.add_argument("--min_offload", type=float, default=None,
+                   help="override heuristic min_offload (0 = disable idle-sleep fix = ORIGINAL heuristic)")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args()
     _selftest() if args.selftest else run(args)
