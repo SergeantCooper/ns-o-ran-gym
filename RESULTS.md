@@ -183,9 +183,25 @@ re-test is in progress; numbers here are preliminary until it lands.*
   baseline." RL's numbers (~35% avg saved, ~5.9 Mbps, RLF ~0.4) *also* look better than the
   **original** heuristic (§2: 34% / 5.68 / 1.20) on all three axes — but that needs a controlled test.
 
-**In progress (`rl/compare_clean.sh`):** RL (shaped) vs the **original** balanced heuristic
-(`--min_offload 0`) on 4 seeds (555/777/999/1234), averaged. **This is the definitive "does RL beat
-the heuristic" test.** Verdict pending — will be filled in here when it completes.
+**Clean comparison — DONE (`rl/compare_clean.sh`, 4 seeds 555/777/999/1234):** shaped-PPO vs the
+**original balanced** heuristic (`--min_offload 0`):
 
-> Preliminary status: **promising** — RL appears to win on QoS and hold/beat on energy, but the
-> clean multi-seed comparison against the *balanced* heuristic is the number that counts.
+| policy | energy saved | throughput | RLF (drops) |
+|---|---|---|---|
+| **RL (shaped)** | **39.7%** | 5.18 Mbps | **0.90** |
+| original heuristic | 33.8% | **5.68 Mbps** | 1.20 |
+| Δ (RL − heuristic) | **+5.8 pts** | **−0.51 Mbps** | **−0.31** |
+
+**Verdict: a favourable TRADEOFF, not strict domination.** RL is better on **2 of 3 axes** — it saves
+~6 pts more energy **and** drops ~26% fewer calls (RLF 0.90 vs 1.20) — but delivers ~9% less
+throughput (5.18 vs 5.68 Mbps). It does not *strictly* beat the heuristic (throughput is lower), but
+it is **not a wash**: the reward shaping let RL learn a **greener, more-reliable operating point**,
+consistent with its reward (dropped calls weighted 2×). So "does RL beat the heuristic?" — **on energy
+and reliability yes, on throughput no**; it is an operating-point choice. Caveat: RL's behaviour is
+**seed-variable** (protects QoS on some seeds, over-sleeps on others), so it is less predictable than
+the fixed heuristic. Per-seed energy saved — RL [24.8, 45.1, 42.6, 46.2], heuristic [35.5, 22.5, 45.0, 32.3].
+
+**Net of this whole phase:** the reward shaping moved RL from a *byte-for-byte tie* (§2) to a
+*distinct, arguably-better* operating point (more energy + more reliable, slightly less throughput) —
+a genuine, honest improvement, though not the unambiguous Pareto-win. Whether it "beats" the heuristic
+is now a priorities call (energy+reliability vs raw throughput), not a clear yes/no.
