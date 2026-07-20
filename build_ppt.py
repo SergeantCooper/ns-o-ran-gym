@@ -127,7 +127,7 @@ image(s, "summary_tradeoff.png", top=1.75, max_w=10.5,
 s = new(); title_bar(s, "Result 2 — an improved reward moved RL off the tie",
                       "Potential-based reward shaping -> a distinct, greener + more-reliable policy")
 image(s, "figures/2_rl_vs_heuristic_by_metric.png", top=1.8, max_w=11.5,
-      caption="Shaped-reward RL vs balanced heuristic (4-seed avg): +6 pts energy AND ~26% fewer dropped calls, ~9% less throughput.")
+      caption="Shaped-reward RL vs balanced heuristic (4-seed avg): +6 pts energy AND ~25% fewer dropped calls, ~9% less throughput.")
 
 # ---- 9. Why not a strict win ----
 s = new(); title_bar(s, "Why RL doesn't strictly dominate (the key insight)")

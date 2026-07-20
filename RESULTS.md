@@ -12,7 +12,7 @@ bursty traffic) and a full learning pipeline (expert heuristic → imitation →
 learning). The company's load-adaptive **heuristic is a strong baseline** — near the efficient
 energy-vs-QoS frontier. A **plain-reward PPO agent tied it** (reproduced it exactly). With an
 **improved, potential-based *shaped* reward, RL moved to a distinct, favourable operating point**:
-averaged over 4 seeds it **saves more energy (~40% vs ~34%) and drops ~26% fewer calls, at ~9%
+averaged over 4 seeds it **saves more energy (~40% vs ~34%) and drops ~25% fewer calls, at ~9%
 less throughput**. So RL ends up **better on energy and reliability, slightly worse on throughput
 — a favourable tradeoff, not a strict win on all three axes.** The reason it cannot *strictly*
 dominate is structural (the slow simulator gives RL a tiny training budget), which we explain and
@@ -46,7 +46,7 @@ frontier beyond the heuristic's single operating point.
 | Aggressive pruning (grace=3) | 52.9% | 5.25 Mbps | 2.36 |
 
 - **Plain-reward PPO reproduces the heuristic** (a tie, confirmed byte-for-byte).
-- **Shaped-reward PPO** — the final RL result — saves **+5.8 pts more energy AND ~26% fewer dropped
+- **Shaped-reward PPO** — the final RL result — saves **+5.8 pts more energy AND ~25% fewer dropped
   calls (RLF 0.90 vs 1.20)**, at **−0.5 Mbps throughput**. Better on 2 of 3 axes: a **favourable
   tradeoff**, not a strict all-axis win. (Per-seed RL energy varies 25–46%; the average is 39.7%.)
 - **Pruning** saves the most energy but costs the most QoS — a tunable operating point (see §3.4).

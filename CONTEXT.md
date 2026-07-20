@@ -79,7 +79,7 @@ exactly why (a structural sample-budget limit of RL on a slow simulator).
     pts more energy but at ~8 % less throughput and ~2× dropped calls — a **tunable** energy↔QoS
     frontier, no setting strictly beating the heuristic.
 12. **Improved the reward (potential-based shaping)** → this moved RL **off the tie**: the shaped-RL
-    policy reaches a **greener + more-reliable** operating point — **+6 pts energy AND ~26 % fewer
+    policy reaches a **greener + more-reliable** operating point — **+6 pts energy AND ~25 % fewer
     dropped calls, at ~9 % less throughput** (4-seed avg). A **favourable tradeoff**, better on 2 of 3
     axes, but still not a strict all-axis win (the heuristic stays ahead on throughput).
 13. **Conclusion:** the heuristic is strong; shaped-RL is a favourable, honest tradeoff; the one real

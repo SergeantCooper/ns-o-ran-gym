@@ -221,7 +221,7 @@ Averaged over 4 random seeds — full discussion in `RESULTS.md`:
 
 **Bottom line:** the heuristic is a strong baseline (near the efficient frontier). Plain-reward PPO
 ties it; with an improved *shaped* reward, RL reaches a **greener + more-reliable** point — more
-energy saved AND ~26 % fewer dropped calls, at ~9 % less throughput. A favourable tradeoff, **not**
+energy saved AND ~25 % fewer dropped calls, at ~9 % less throughput. A favourable tradeoff, **not**
 a strict 3-axis win; the blocker is the simulator's tiny RL sample budget (see `RESULTS.md` §3–4).
 Figures: `figures/` suite, `summary_tradeoff.png`, `shaped_vs_heuristic.png`.
 
