@@ -141,11 +141,12 @@ $PY plot_energy.py $(ls -dt output/*/ | head -1)     # ~35% saved, ~5.7 Mbps, RL
 
 ## 7A. Path A — evaluate the committed model (fast)
 
-The trained model (`rl/ppo_final.zip`), its BC start point (`rl/bc_ppo.zip`), the normalization
-(`rl/obs_stats.npz`) and demos (`rl/demos.npz`) are committed. Just evaluate:
+The trained models — `rl/ppo_final.zip` (plain reward, ties the heuristic) and `rl/ppo_shaped.zip`
+(shaped reward, the final favourable-tradeoff model) — plus the BC start (`rl/bc_ppo.zip`),
+normalization (`rl/obs_stats.npz`) and demos (`rl/demos.npz`) are committed. Evaluate the final model:
 ```bash
 rm -f /dev/shm/sem.*
-PYTHONPATH=src $PY rl/eval_rl.py --model rl/ppo_final.zip --stats rl/obs_stats.npz \
+PYTHONPATH=src $PY rl/eval_rl.py --model rl/ppo_shaped.zip --stats rl/obs_stats.npz \
     --ns3_path $NS3 --config $CFG --num_steps 58
 # -> prints per-step actions + 'RL run folder: output/<uuid>'; score it with plot_energy.py
 ```
@@ -159,7 +160,7 @@ bash rl/collect_new.sh
 # 2) behaviour cloning + critic warm-up (fast, offline)  -> rl/bc_ppo.zip, rl/obs_stats.npz
 PYTHONPATH=src $PY rl/train_bc.py --demos rl/demos.npz
 # 3) PPO fine-tune (~4 h; live ns-3 rollouts). Do NOT rebuild ns-3 while this runs.
-PYTHONPATH=src $PY rl/train_ppo.py --config $CFG --timesteps 640 --ent_coef 0.01
+PYTHONPATH=src $PY rl/train_ppo.py --config $CFG --reward_mode power_shaped --ent_coef 0.01  # -> rl/ppo_shaped.zip
 # 4) evaluate + compare + frontier + multi-seed validation
 bash rl/compare_new.sh        # heuristic vs PPO vs pruning (seed 555)
 bash rl/sweep_grace.sh        # pruning frontier -> writes rl/frontier_runs.tsv + tradeoff.png
@@ -176,11 +177,13 @@ Averaged over seeds 555/777/999/1234 (see `RESULTS.md` for the full write-up):
 |---|---|---|---|
 | all cells on | 0% | 6.10 Mbps | 0.00 |
 | heuristic | ~34% | ~5.68 Mbps | ~1.20 |
-| **PPO (RL)** | ~34% | ~5.68 Mbps | ~1.20  ← ties the heuristic |
+| RL — plain reward | ~34% | ~5.68 Mbps | ~1.20  ← ties the heuristic |
+| **RL — shaped reward** (final) | **~40%** | ~5.18 Mbps | **~0.90**  ← +energy, +reliability, −throughput |
 | pruning (aggressive) | ~53% | ~5.25 Mbps | ~2.36  ← more energy, worse QoS |
 
-The headline finding: **PPO ties the heuristic; no policy strictly beats it** (energy gains cost
-throughput + reliability). Full explanation in `RESULTS.md`.
+Headline: plain-reward PPO **ties** the heuristic; the **shaped-reward** RL is a **favourable tradeoff**
+— more energy saved AND fewer dropped calls, at slightly less throughput (better on 2 of 3 axes), not a
+strict all-axis win. Full explanation in `RESULTS.md`.
 
 ---
 

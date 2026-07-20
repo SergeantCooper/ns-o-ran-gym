@@ -18,8 +18,10 @@ beat it, and an **aggressive pruning controller**. The twin, the control loop, t
 pipeline, and the analysis are all reproducible from code.
 
 **Goal:** an RL model with a better energy-vs-quality tradeoff than the heuristic.
-**Outcome (see `RESULTS.md`):** the heuristic is already near-optimal here; RL *ties* it, and more
-energy is only obtainable by trading some quality — a rigorously-explained result.
+**Outcome (see `RESULTS.md`):** the heuristic is a strong baseline; plain-reward RL *ties* it, and
+with an improved *shaped* reward RL reaches a **greener + more-reliable** operating point (more
+energy saved and fewer dropped calls, at slightly less throughput) — a favourable tradeoff, not a
+strict all-axis win. Why it can't strictly dominate is rigorously explained.
 
 ---
 
@@ -117,7 +119,7 @@ live ns-3 process step by step.
 | Controller | What it is | Where |
 |---|---|---|
 | **TwinHeuristic** | Hand-coded expert: sleeps idle cells, wakes on neighbour load, with hysteresis/guardrails. The baseline to beat. | `heuristic_twin.py` |
-| **PPO agent** | RL policy (neural net). Warm-started by cloning the heuristic, then fine-tuned on the reward. | `rl/train_bc.py` → `rl/train_ppo.py` → `rl/ppo_final.zip` |
+| **PPO agent** | RL policy (neural net). Warm-started by cloning the heuristic, then fine-tuned on the reward. | `rl/train_bc.py` → `rl/train_ppo.py` → `rl/ppo_final.zip` (plain, ties) / `rl/ppo_shaped.zip` (shaped, final) |
 | **Pruning controller** | Keeps the heuristic's wake logic but switches OFF cells it powers with *no traffic*; a `grace` dial sets aggressiveness. | `rl/aggressive_ctl.py` |
 
 *(There is also ns-3's own built-in heuristic in `src/mmwave/helper/energy-heuristic.cc`, but it is
@@ -142,7 +144,8 @@ why the project uses the custom load-adaptive `TwinHeuristic` instead.)*
    returns. The warm-up is essential — without it, PPO's first updates use garbage feedback and
    destroy the good policy (we observed and fixed exactly that). → `rl/bc_ppo.zip`, `rl/obs_stats.npz`.
 3. **PPO fine-tune** (`rl/train_ppo.py`): reinforcement-learn on the true reward via live ns-3
-   rollouts. ~4 h (the sim is the bottleneck). → `rl/ppo_final.zip`.
+   rollouts. ~4 h (the sim is the bottleneck). → `rl/ppo_final.zip` (plain reward, tie) or
+   `rl/ppo_shaped.zip` (shaped reward, the final favourable-tradeoff model).
 4. **Evaluate & analyse** (`rl/eval_rl.py`, `rl/compare_new.sh`, `rl/sweep_grace.sh`,
    `rl/validate_g3.sh`): run each controller, score with `plot_energy.py`, and render the figures.
 
@@ -174,7 +177,7 @@ why the project uses the custom load-adaptive `TwinHeuristic` instead.)*
 │   │   ├── aggressive_ctl.py    #   the pruning / reactive controller
 │   │   ├── *.sh                 #   batch runners (collect/compare/sweep/validate)
 │   │   ├── *.tsv                #   figure manifests (run-folder pointers)
-│   │   └── ppo_final.zip, bc_ppo.zip, obs_stats.npz, demos.npz   # trained artifacts
+│   │   └── ppo_final.zip (plain/tie), ppo_shaped.zip (final), bc_ppo.zip, obs_stats.npz, demos.npz
 │   ├── plot_energy.py       # score ONE run (energy/throughput/RLF) + power-over-time PNG
 │   ├── plot_frontier.py     # per-seed tradeoff figure  -> tradeoff.png
 │   ├── plot_summary.py      # 4-seed averaged figure     -> summary_tradeoff.png
@@ -212,13 +215,15 @@ Averaged over 4 random seeds — full discussion in `RESULTS.md`:
 |---|---|---|---|
 | all cells on | 0 % | 6.10 Mbps | 0.00 |
 | **heuristic** (baseline) | ~34 % | ~5.68 Mbps | ~1.20 |
-| **PPO (RL)** | ~34 % | ~5.68 Mbps | ~1.20  ← ties the heuristic |
+| RL — plain reward | ~34 % | ~5.68 Mbps | ~1.20  ← ties the heuristic |
+| **RL — shaped reward** (final) | **~40 %** | ~5.18 Mbps | **~0.90**  ← +energy, +reliability, −throughput |
 | pruning (aggressive) | ~53 % | ~5.25 Mbps | ~2.36  ← more energy, worse QoS |
 
-**Bottom line:** the heuristic sits near the efficient energy-vs-QoS frontier; PPO matches it (a
-structural limit of RL at this simulator's sample budget, not a tuning bug); saving more energy
-costs reliability. A genuine clean win would need a *spatial-hotspot* scenario (recommended next
-step, `RESULTS.md` §4). Figures: `tradeoff.png`, `summary_tradeoff.png`, `energy_new.png`.
+**Bottom line:** the heuristic is a strong baseline (near the efficient frontier). Plain-reward PPO
+ties it; with an improved *shaped* reward, RL reaches a **greener + more-reliable** point — more
+energy saved AND ~26 % fewer dropped calls, at ~9 % less throughput. A favourable tradeoff, **not**
+a strict 3-axis win; the blocker is the simulator's tiny RL sample budget (see `RESULTS.md` §3–4).
+Figures: `figures/` suite, `summary_tradeoff.png`, `shaped_vs_heuristic.png`.
 
 ---
 
@@ -228,7 +233,7 @@ step, `RESULTS.md` §4). Figures: `tradeoff.png`, `summary_tradeoff.png`, `energ
 - **Quick evaluate the trained model** (after building):
   ```bash
   cd ns-o-ran-gym
-  PYTHONPATH=src /workspace/.venv/bin/python rl/eval_rl.py --model rl/ppo_final.zip \
+  PYTHONPATH=src /workspace/.venv/bin/python rl/eval_rl.py --model rl/ppo_shaped.zip \
       --stats rl/obs_stats.npz --config src/environments/scenario_configurations/es_use_case.json
   ```
 - **Regenerate the figures:** `python plot_frontier.py` and `python plot_summary.py`.

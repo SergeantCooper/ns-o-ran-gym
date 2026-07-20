@@ -1,16 +1,15 @@
 # Project Context Primer — ns-O-RAN Energy-Saving Twin + RL
 
 *Paste this whole file into a fresh Claude chat to give it complete context on my project so it can
-help me discuss/continue it. It captures everything done **up to (not including) the "hotspot"
-step**, including the decisions and the reasoning behind them. Date: 2026-07-15.*
+help me discuss/continue it. It captures the full journey, the results, and the reasoning behind the
+decisions. Last updated: 2026-07-17.*
 
 ---
 
 ## 0. How to use this
 I'm working on an energy-saving controller for a simulated 5G network (my company assigned it).
-I can't run the code from my phone — I just need you to understand the project so we can reason
-about it. The full docs live in the repo (`OVERVIEW.md`, `RESULTS.md`, `REPRODUCE.md`); this file
-is the narrative + current-state summary.
+The full docs live in the repo (`OVERVIEW.md` = how it works, `RESULTS.md` = findings, `REPRODUCE.md`
+= build & run); this file is the narrative + current-state summary for quick context.
 
 ---
 
@@ -21,10 +20,11 @@ which gNBs to put to **sleep** to save energy **without hurting service quality*
 dropped calls). The company's framing: **an RL model that beats the hand-coded heuristic** on the
 energy-vs-quality tradeoff.
 
-**Where we landed (before the hotspot step): the heuristic is already near-optimal on our
-scenario; RL *ties* it and we can explain exactly why; more energy is only obtainable by trading
-some quality.** We're now testing whether a more realistic "hotspot" scenario makes a genuine clean
-win reachable.
+**Where we landed:** the heuristic is a **strong baseline**; **plain-reward RL tied it**; and with an
+**improved (shaped) reward, RL reached a favourable tradeoff** — it saves **more energy and drops
+fewer calls, at slightly less throughput**. So RL is better on energy + reliability, slightly worse
+on throughput: a favourable tradeoff, **not** a strict win on all three axes — and we can explain
+exactly why (a structural sample-budget limit of RL on a slow simulator).
 
 ---
 
@@ -37,63 +37,53 @@ win reachable.
   observation** → the controller picks a **7-bit ON/OFF action** → gym writes it to a file → ns-3
   applies it. Coordinated by two POSIX semaphores in `/dev/shm`. Real-time closed loop.
 - **Observation (61 features):** per cell — PRB utilisation (how busy), throughput, RLF (dropped
-  calls), efficiency KPI, modulation — plus 5 network aggregates. **No per-cell demand forecast**
-  exists (this matters — see §4).
+  calls), efficiency KPI, modulation — plus 5 network aggregates.
 - **Action:** `MultiBinary(7)`, one ON/OFF bit per gNB; the anchor is forced ON.
 - **Custom RL reward (I wrote this):** `reward = throughput_Mbps − 1.0·power_kW − 2.0·RLF` per step,
-  where power = Σ over ON cells of `(600 W + 400 W·utilisation)`. It's in `rl/es_wrapper.py`
-  (`_power_reward`). I replaced the environment's built-in opaque proxy reward with this so the
-  agent optimises **the same power model the analysis scores** (in real units: Mbps, kW, drops).
+  where power = Σ over ON cells of `(600 W + 400 W·utilisation)`. In `rl/es_wrapper.py`. A
+  **shaped** variant (`reward_mode=power_shaped`) adds dense per-cell credit for sleeping idle cells
+  (potential-based; doesn't change the optimum) — this is what produced the final RL result.
 - **Energy model / metrics:** `plot_energy.py` — each ON gNB = 600 W static + 400 W·util, sleeping
   ≈ 0 W. "% saved" is vs. all-cells-on. QoS = throughput (Mbps) + RLF (dropped calls, lower better).
 
 ---
 
 ## 3. What we did (the journey + decisions)
-1. **Fixed the environment (M1):** crash on empty KPM windows, a SINR string-vs-int bug, a PRB
-   utilisation bug; corrected the scenario config (`e2nrEnabled`, `bsOn=7`, `heuristicType=-1`).
+1. **Fixed the environment:** crash on empty KPM windows, a SINR string-vs-int bug, a PRB-utilisation
+   bug; corrected the scenario config (`e2nrEnabled`, `bsOn=7`, `heuristicType=-1`).
 2. **Understood the built-in heuristic:** ns-3's own `heuristicType=2` is **quota-driven** (sleeps a
-   fixed *count* of cells regardless of load) → it can't adapt. That's why the project uses a custom
-   **load-adaptive** expert, `heuristic_twin.py` (`TwinHeuristic`): sleeps idle cells, wakes on
-   neighbour load, with hysteresis/guardrails.
-3. **Deferred GAIL (company's original ask):** I argued (in a memo) that GAIL only *imitates* the
-   heuristic — it can't beat it — and is expensive on a slow simulator. The "beating" must come from
-   **RL on the true reward**. So the plan became **BC (imitate) → PPO (surpass)**, GAIL optional.
-   The company accepted deferring GAIL.
-4. **Built the RL pipeline** (`rl/`): collect expert demos → **Behaviour Cloning** (BC) to clone the
-   heuristic into a neural net (reached **100 % match**) → **PPO** fine-tune on the custom reward →
-   evaluate. Stack: Stable-Baselines3, PyTorch (CPU — the sim, not the NN, is the bottleneck).
-5. **Old scenario (smooth day/night traffic) → RL TIED the heuristic.** Root cause was the
-   *scenario*, not the RL: on smooth load the heuristic was already near-optimal, so there was no
-   waste to reclaim.
-6. **Redesigned the traffic to be bursty** (`scenario-three.cc`): 3 sharp traffic bursts per episode
-   with an always-on baseline user, so the controller must adapt in real time. Verified the load
-   oscillates and the heuristic became dynamic (cells-on swings 2–7).
-7. **PPO run #1 on the burst scenario COLLAPSED** (reward −6.4 → −30). Diagnosed: warm-starting PPO
-   from the cloned policy leaves its **value estimator (critic) random**, so early updates use
-   garbage feedback and wreck the good policy — a classic BC→PPO failure.
-8. **Fixed it:** BC now also **pre-trains the critic** on the demos' returns (`train_bc.py`). Verified
-   the critic then matches true returns at **0.99 correlation** while the cloned policy stays a
-   perfect copy.
-9. **PPO run #2 (with warm critic) = TIE.** No collapse this time, but the final deterministic
-   policy came out **identical to the heuristic** (its probability of sleeping any cell converged to
-   ~0.4 %). **Why (structural, not a bug):** with random ON/OFF exploration over 6 cells, each trial
-   sleeps idle *and* busy cells together; busy-cell failures dominate the single reward, so the
-   algorithm learns "sleeping is risky." With only ~640 affordable trial-steps (slow sim) it can't
-   do the fine-grained credit assignment to learn "sleeping *this specific idle* cell was good."
-   **Plain RL exploration can't capture the prize at this simulator's speed.**
-10. **Quantified the headroom:** the heuristic keeps a cell powered with **no traffic 43 % of the
-    time**. A *hindsight* oracle (that knows which cells had no traffic) would save 49–63 % at almost
-    no cost. **But** a real controller must decide *before* seeing the traffic — sleeping a
-    momentarily-idle cell that then gets used causes dropped calls. So the headroom is **real in
-    hindsight but not causally free**.
-11. **Built a pruning controller** (`rl/aggressive_ctl.py`) that keeps the heuristic's wake logic but
-    switches OFF cells it powers with no traffic (a `grace` dial sets aggressiveness). Swept it and
-    **validated on 4 seeds**: it robustly saves **~19 points more energy** but costs **~8 %
-    throughput and ~2× the dropped calls**. No setting *strictly* beats the heuristic.
-12. **Conclusion:** the heuristic sits **near the efficient energy-vs-QoS frontier**; every energy
-    gain buys a quality loss. That's the honest result. To get a genuine *clean* win we need a
-    scenario with **structurally idle cells** — which is the hotspot step now in progress.
+   fixed *count* of cells regardless of load) → can't adapt. So the project uses a custom
+   **load-adaptive** expert, `heuristic_twin.py` (`TwinHeuristic`).
+3. **Deferred GAIL (company's original ask):** GAIL only *imitates* the heuristic (can't beat it) and
+   is expensive on a slow sim. The "beating" must come from **RL on the true reward** → plan became
+   **BC (imitate) → PPO (surpass)**, GAIL optional. Company accepted.
+4. **Built the RL pipeline** (`rl/`): expert demos → **Behaviour Cloning** (100 % match) → **PPO** on
+   the reward → evaluate. Stack: Stable-Baselines3 + PyTorch (CPU; the sim, not the NN, is the bottleneck).
+5. **Old scenario (smooth day/night traffic) → RL TIED the heuristic** — because the *scenario* had no
+   headroom (heuristic already near-optimal on smooth load), not because RL failed.
+6. **Redesigned the traffic to be bursty** (3 sharp bursts/episode + always-on baseline user) so the
+   controller must adapt in real time (cells-on now swings 2–7).
+7. **PPO run #1 COLLAPSED** (reward −6.4 → −30). Diagnosed: warm-starting PPO from the clone leaves its
+   **value estimator (critic) random** → early updates wreck the good policy. Classic BC→PPO trap.
+8. **Fixed it:** BC now also **pre-trains the critic** on the demos' returns (`train_bc.py`) →
+   critic↔returns corr **0.99**, cloned policy stays a perfect copy.
+9. **PPO run #2 (warm critic) = TIE** — no collapse, but the greedy policy converged back to the
+   heuristic. **Why (structural):** random ON/OFF exploration sleeps idle *and* busy cells together;
+   busy-cell failures dominate the reward; with only ~640 affordable trial-steps (slow sim), RL can't
+   isolate "sleeping *this idle* cell was good." Plain RL can't capture the prize at this sim speed.
+10. **Quantified the headroom:** the heuristic keeps a cell powered with **no traffic ~43 % of the
+    time**; a *hindsight* oracle would save 49–63 % at ~no cost — **but** a real controller decides
+    *before* seeing the traffic, so sleeping a soon-needed cell drops a call. Headroom is real in
+    hindsight, **not causally free**.
+11. **Built a pruning controller** (`rl/aggressive_ctl.py`) with a `grace` dial: robustly saves ~19
+    pts more energy but at ~8 % less throughput and ~2× dropped calls — a **tunable** energy↔QoS
+    frontier, no setting strictly beating the heuristic.
+12. **Improved the reward (potential-based shaping)** → this moved RL **off the tie**: the shaped-RL
+    policy reaches a **greener + more-reliable** operating point — **+6 pts energy AND ~26 % fewer
+    dropped calls, at ~9 % less throughput** (4-seed avg). A **favourable tradeoff**, better on 2 of 3
+    axes, but still not a strict all-axis win (the heuristic stays ahead on throughput).
+13. **Conclusion:** the heuristic is strong; shaped-RL is a favourable, honest tradeoff; the one real
+    blocker to a *strict* win is the simulator's tiny RL sample budget.
 
 ---
 
@@ -103,73 +93,60 @@ win reachable.
 |---|---|---|---|
 | all cells on | 0 % | 6.10 Mbps | 0.00 |
 | **heuristic** (baseline) | ~34 % | ~5.68 Mbps | ~1.20 |
-| **PPO (RL)** | ~34 % | ~5.68 Mbps | ~1.20  ← ties the heuristic exactly |
+| RL — plain reward | ~34 % | ~5.68 Mbps | ~1.20  ← ties the heuristic |
+| **RL — shaped reward** (final) | **~40 %** | ~5.18 Mbps | **~0.90**  ← +energy, +reliability, −throughput |
 | pruning (aggressive) | ~53 % | ~5.25 Mbps | ~2.36  ← more energy, worse QoS |
 
-**Bottom line:** PPO ties; nothing strictly beats the heuristic on this (uniform-load) scenario;
-the limitation is structural (RL sample-starved on a slow sim + no free energy to reclaim).
+**Bottom line:** plain RL ties; shaped RL is a **favourable tradeoff** (better on energy + reliability,
+slightly worse on throughput) — not a strict all-axis win. Per-seed RL energy varies 25–46 %.
 
 ---
 
 ## 5. Current state (files, artifacts, git)
-- **Two git repos** (siblings under `/workspace`):
-  - `ns-3-mmwave-oran` (the twin, C++), branch **`energy-saving-twin`** — **pushed** ✓.
-  - `ns-o-ran-gym` (gym/RL/analysis, Python), branch **`energy-saving-fixes`** — **2 commits still
-    unpushed** as of writing (the OVERVIEW.md doc + a doc-map fix); I need to `git push` once more.
-  - (`oran-e2sim` = E2 interface library, built once; ns-3 links it.)
-- **Trained artifacts (committed):** `rl/ppo_final.zip` (the RL model), `rl/bc_ppo.zip` (BC + warm
-  critic), `rl/obs_stats.npz` (obs normalization), `rl/demos.npz` (expert demos).
-- **Figures:** `tradeoff.png` (per-seed scatter + table), `summary_tradeoff.png` (4-seed averaged),
-  `energy_new.png` (power/cells-on/sleep-timeline over time). All computed **live from run folders**
-  (no hard-coded numbers).
-- **Docs (current):** `OVERVIEW.md` (how it all works), `RESULTS.md` (findings), `REPRODUCE.md`
-  (build & run from scratch), `CONTEXT.md` (this file). Older docs (`HANDOFF.md`,
-  `MILESTONE1_CHECKS.txt`, `PROJECT_HANDOFF.md`, `RL_APPROACH_RECOMMENDATION.md`) are **superseded**
-  and archived in `work.zip`.
-- **Key code:** `heuristic_twin.py` (expert), `rl/es_wrapper.py` (gym wrapper + custom reward),
-  `rl/train_bc.py` (BC + critic warm-up), `rl/train_ppo.py` (PPO), `rl/eval_rl.py`,
-  `rl/aggressive_ctl.py` (pruning), `plot_energy.py` / `plot_frontier.py` / `plot_summary.py`.
-  Env: `src/environments/es_env.py`, base loop `src/nsoran/ns_env.py`. Config
+- **Two git repos** (siblings under `/workspace`): `ns-3-mmwave-oran` (twin, C++, branch
+  `energy-saving-twin`) and `ns-o-ran-gym` (gym/RL/analysis, Python, branch `energy-saving-fixes`).
+  (`oran-e2sim` = E2 interface library, built once.) A few commits may be unpushed — `git push` both.
+- **Trained artifacts (committed):** `rl/ppo_final.zip` (plain reward, ties), `rl/ppo_shaped.zip`
+  (shaped reward, the **final** favourable-tradeoff model), `rl/bc_ppo.zip` (BC + warm critic),
+  `rl/obs_stats.npz`, `rl/demos.npz`.
+- **Figures (computed live from run folders):** `figures/` suite (1 tradeoff scatter, 2 per-metric
+  bars, 3 pruning frontier, 4 controller-over-time), plus `summary_tradeoff.png`, `shaped_vs_heuristic.png`.
+- **Presentation:** `energy_saving_RL_project.pptx` (built by `build_ppt.py`).
+- **Docs:** `OVERVIEW.md`, `RESULTS.md`, `REPRODUCE.md`, `CONTEXT.md` (this file). Older phase notes
+  are archived in `work.zip`.
+- **Key code:** `heuristic_twin.py` (expert), `rl/es_wrapper.py` (wrapper + reward), `rl/train_bc.py`,
+  `rl/train_ppo.py`, `rl/eval_rl.py`, `rl/aggressive_ctl.py`, `plot_energy.py`, `plot_report.py`.
+  Env: `src/environments/es_env.py`; base loop `src/nsoran/ns_env.py`; config
   `src/environments/scenario_configurations/es_use_case.json` (6 UEs, seed 555, burst traffic).
 
 ---
 
 ## 6. Gotchas / constraints (important for reasoning)
-- **ns-3 is slow (~15–20 s/step) and single-threaded; a GPU does not help.** This is *the* binding
-  constraint — it's why RL is sample-starved and full training takes ~4 h.
+- **ns-3 is slow (~15–20 s/step) and single-threaded; a GPU does not help** — *the* binding constraint
+  (why RL is sample-starved; training ≈ 4 h).
 - Compare energy **per-step**, not per-run total (runs can differ in step count).
 - Clean stale semaphores between runs: `rm -f /dev/shm/sem.*`.
-- **Never rebuild ns-3 while a live gym/PPO run is going** — it relaunches the binary each episode.
-- Each run writes a **new** `output/<uuid>/` folder (nothing overwritten); newest = `ls -dt output/*/ | head -1`.
-- The RL reward is my **custom** power-model reward (`rl/es_wrapper.py`), *not* the env's built-in
-  proxy (which is what gets printed during a plain heuristic run — a common source of confusion).
+- **Never rebuild ns-3 while a live gym/PPO run is going** (it relaunches the binary each episode).
+- Each run writes a **new** `output/<uuid>/` folder; newest = `ls -dt output/*/ | head -1`.
+- The RL reward is my **custom** power-model reward (`rl/es_wrapper.py`), not the env's built-in proxy
+  (which is what prints during a plain heuristic run — a common source of confusion).
+- Figures/models are seed-averaged (555/777/999/1234); single-seed numbers can look very different.
 
 ---
 
-## 7. What's running now / immediate next step (the hotspot step — just started)
-I'm testing whether a **spatial-hotspot** scenario yields a genuine clean win. It clusters the 6
-users around only **4 of the 7 cells** (config: `positionAllocator=1, nBsNoUesAlloc=3`), leaving
-**3 cells structurally idle** — more realistic (busy vs quiet areas) and potentially winnable,
-because a controller could sleep the never-used cells **for free**. A ~15-min feasibility probe is
-running: does the heuristic wastefully keep those idle cells ON? If yes → headroom → full pipeline
-(after fixing a non-deterministic cell-shuffle in the scenario). If no → the tie result stands.
-*(This is the one part NOT yet resolved as of this doc.)*
+## 7. Open decisions / possible next steps
+1. **Sample-efficient RL** — offline RL on logged rollouts, a fast learned surrogate of the sim, or
+   model-based RL — to escape the ~640-trial-step budget that blocks a strict win.
+2. **Richer / larger network scenarios** — more cells and spatial structure a fixed heuristic can't
+   fully exploit.
+3. **Ship the tunable controller as-is** — greener + more reliable, with an operator-selectable
+   energy↔QoS dial: a solid, honest deliverable.
 
 ---
 
-## 8. Open decisions / possible next steps
-1. **Hotspot scenario** (in progress) — the realistic route to a clean beat.
-2. **Fix the deeper RL limitation** — give each cell its own credit (factored reward / action
-   masking) so RL can isolate "sleep this idle cell." Would let RL win even on the hard scenario.
-3. **More rigor** — more seeds + reward-weight sensitivity to make the final claim bulletproof.
-4. **Stakeholder call** — accept the honest tie + tunable tradeoff frontier as the deliverable, or
-   invest in #1/#2 for a clean "RL beats heuristic" story.
-
----
-
-## 9. Glossary
+## 8. Glossary
 **gNB** 5G base station · **UE** user device · **PRB** radio-capacity unit (utilisation = how busy) ·
 **RLF** radio link failure (dropped call) · **KPM** key performance metric · **BC** behaviour cloning
 (supervised imitation) · **PPO** an RL algorithm · **critic** the value-estimator half of an RL agent ·
-**heuristic** the hand-coded expert controller (`TwinHeuristic`) · **twin** the simulator standing in
-for a real network.
+**shaped reward** the potential-based reward that adds dense idle-sleep credit · **heuristic** the
+hand-coded expert (`TwinHeuristic`) · **twin** the simulator standing in for a real network.
