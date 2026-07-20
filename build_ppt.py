@@ -18,7 +18,7 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.ns import qn
 from pptx.oxml import parse_xml
 from PIL import Image
-import os
+import os, re
 
 # ---- palette ----
 INK    = RGBColor(0x1A, 0x22, 0x33)   # body / title ink
@@ -100,6 +100,16 @@ def run(p, text, size, color, bold=False, italic=False):
     r.font.bold = bold; r.font.italic = italic
     return r
 
+def _emit_runs(p, text, size, color):
+    """render text, honouring a single **bold** span convention for lead-in labels."""
+    for seg in re.split(r'(\*\*[^*]+\*\*)', text):
+        if not seg:
+            continue
+        if seg.startswith('**') and seg.endswith('**'):
+            run(p, seg[2:-2], size, color, bold=True)
+        else:
+            run(p, seg, size, color)
+
 # ---------- slide furniture ----------
 def frame(slide):
     """left accent strip — consistent frame on every content slide."""
@@ -145,10 +155,10 @@ def bullets(slide, items, n):
         p.space_after = Pt(10 if lvl == 0 else 5)
         if lvl == 0:
             run(p, "▪  ", size, ACC, bold=True)
-            run(p, txt, size, INK)
+            _emit_runs(p, txt, size, INK)
         else:
             run(p, "–  ", size - 2, ACC2, bold=True)
-            run(p, txt, size - 2, MUTE)
+            _emit_runs(p, txt, size - 2, MUTE)
     footer(slide, n)
 
 def image(slide, path, n, top=2.15, max_w=11.0, max_h=4.15, caption=None):
@@ -220,16 +230,16 @@ bullets(s, [
  ("5G base stations (gNBs) draw ~600 W even when almost idle — a large, avoidable energy cost.", 0),
  ("Idea: an intelligent controller that puts unused gNBs to sleep, waking them when demand returns.", 0),
  ("The tension: sleep too aggressively and you drop calls / lose throughput (QoS).", 0),
- ("Company goal: a reinforcement-learning (RL) controller that beats the hand-coded heuristic on the", 0),
- ("energy-vs-QoS tradeoff — more energy saved without hurting throughput or reliability.", 1),
+ ("Company goal: a reinforcement-learning (RL) controller that beats the hand-coded heuristic on the "
+  "energy-vs-QoS tradeoff — more energy saved without hurting throughput or reliability.", 0),
 ], 2)
 
 # ================= 3. The digital twin =================
 s = new(); title_bar(s, "The digital twin (what we simulate)", kicker="System")
 bullets(s, [
  ("ns-3 mmWave O-RAN simulator, scenario-three: 1 LTE anchor cell + 7 mmWave gNBs (can sleep), 6 users.", 0),
- ("Traffic redesigned to 3 sharp bursts per episode (+ an always-on baseline user) — so the controller", 0),
- ("must adapt in real time (sleep in the lulls, wake for the bursts).", 1),
+ ("Traffic redesigned to 3 sharp bursts per episode (+ an always-on baseline user) — so the controller "
+  "must adapt in real time (sleep in the lulls, wake for the bursts).", 0),
  ("Energy model: each ON gNB = 600 W static + 400 W x utilisation; a sleeping gNB ~ 0 W.", 0),
  ("Key constraint: the simulator runs ~15-20 s per 100 ms control step (CPU-bound) — this shapes everything.", 0),
 ], 3)
@@ -259,8 +269,8 @@ bullets(s, [
 s = new(); title_bar(s, "The learning pipeline", kicker="Method")
 bullets(s, [
  ("1)  Collect expert demonstrations - run the heuristic on the twin, log (observation, action) pairs.", 0),
- ("2)  Behaviour Cloning (+ critic warm-up) - clone the heuristic into the policy AND pre-train its value", 0),
- ("estimator; the warm-up fixes a classic BC->PPO collapse we hit and diagnosed.", 1),
+ ("2)  Behaviour Cloning (+ critic warm-up) - clone the heuristic into the policy AND pre-train its value "
+  "estimator; the warm-up fixes a classic BC->PPO collapse we hit and diagnosed.", 0),
  ("3)  PPO fine-tune (~4 h, live ns-3 rollouts) - improve on the true reward.", 0),
  ("4)  Evaluate deterministically vs the heuristic across 4 seeds; score energy / throughput / RLF.", 0),
  ("All reproducible; trained model + demos committed to the repo.", 0),
@@ -282,10 +292,10 @@ image(s, "figures/2_rl_vs_heuristic_by_metric.png", 8, top=2.1, max_w=11.0,
 s = new(); title_bar(s, "Why RL doesn't strictly dominate (the key insight)", kicker="Analysis")
 bullets(s, [
  ("The heuristic is genuinely near-optimal here - it's hard to beat because it's already good.", 0),
- ("RL is sample-starved: the slow sim affords only ~640 trial-steps, and random on/off exploration", 0),
- ("sleeps idle AND busy cells together -> can't isolate 'sleeping THIS idle cell was the good move'.", 1),
- ("The 43% 'idle-but-powered' waste is real in hindsight, but NOT free to reclaim: sleeping a", 0),
- ("momentarily-idle cell that's needed next causes a dropped call. The heuristic's caution is justified.", 1),
+ ("RL is sample-starved: the slow sim affords only ~640 trial-steps, and random on/off exploration "
+  "sleeps idle AND busy cells together -> can't isolate 'sleeping THIS idle cell was the good move'.", 0),
+ ("The 43% 'idle-but-powered' waste is real in hindsight, but NOT free to reclaim: sleeping a "
+  "momentarily-idle cell that's needed next causes a dropped call. The heuristic's caution is justified.", 0),
  ("So it's a favourable TRADEOFF (greener + more reliable, slightly less throughput), not a clean sweep.", 0),
 ], 9)
 
@@ -305,14 +315,14 @@ image(s, "figures/4_controller_behavior_over_time.png", 11, top=2.1, max_w=10.2,
 # ================= 12. Bottom line =================
 s = new(); title_bar(s, "Bottom line & next steps", kicker="Summary")
 bullets(s, [
- ("Delivered: a realistic bursty twin, a working imitation+RL pipeline (BC 100% match, stable PPO),", 0),
- ("a rigorous energy-vs-QoS tradeoff, and a tunable energy-saving controller.", 1),
- ("RL result: with reward shaping, RL learns a greener + more-reliable operating point than the heuristic", 0),
- ("- better on energy AND dropped-calls, slightly lower throughput: a favourable, honest tradeoff.", 1),
- ("It does not STRICTLY beat a strong heuristic on all three axes - the real blocker is the slow", 0),
- ("simulator's tiny sample budget (~640 RL trial-steps), too little to out-tune a good heuristic.", 1),
- ("Next steps: (1) sample-efficient RL - offline RL on logged data, or a fast learned surrogate of the", 0),
- ("sim - to escape that budget;  (2) richer / larger network scenarios;  (3) ship the tunable controller.", 1),
+ ("**Delivered:** a realistic bursty twin, a working imitation+RL pipeline (BC 100% match, stable PPO), "
+  "a rigorous energy-vs-QoS tradeoff, and a tunable energy-saving controller.", 0),
+ ("**RL result:** with reward shaping, RL learns a greener + more-reliable operating point than the "
+  "heuristic - better on energy AND dropped-calls, slightly lower throughput: a favourable, honest tradeoff.", 0),
+ ("**It does not STRICTLY beat** a strong heuristic on all three axes - the real blocker is the slow "
+  "simulator's tiny sample budget (~640 RL trial-steps), too little to out-tune a good heuristic.", 0),
+ ("**Next steps:** (1) sample-efficient RL - offline RL on logged data, or a fast learned surrogate of the "
+  "sim - to escape that budget;  (2) richer / larger network scenarios;  (3) ship the tunable controller.", 0),
 ], 12)
 
 # ================= 13. Reproducibility =================
@@ -320,8 +330,8 @@ s = new(); title_bar(s, "Reproducibility & deliverables", kicker="Deliverables")
 bullets(s, [
  ("Two git repos: ns-3-mmwave-oran (the twin) + ns-o-ran-gym (gym / RL / analysis).", 0),
  ("Committed: trained model + demos + obs-stats; all scripts; figures computed live from run folders.", 0),
- ("Docs (self-contained): OVERVIEW.md (how it all works), RESULTS.md (findings & numbers),", 0),
- ("REPRODUCE.md (build & run from scratch), CONTEXT.md (full-journey primer).", 1),
+ ("Docs (self-contained): OVERVIEW.md (how it all works), RESULTS.md (findings & numbers), "
+  "REPRODUCE.md (build & run from scratch), CONTEXT.md (full-journey primer).", 0),
  ("Figures: energy-vs-QoS tradeoff, per-metric comparison, pruning frontier, controller-over-time.", 0),
 ], 13)
 
