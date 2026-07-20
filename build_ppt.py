@@ -150,18 +150,20 @@ image(s, "figures/3_pruning_frontier.png", top=1.8, max_w=9.5,
 s = new(); title_bar(s, "What the controller does over time",
                       "Cells sleep through the lulls and wake for the bursts")
 image(s, "figures/4_controller_behavior_over_time.png", top=1.8, max_w=10.5,
-      caption="Power over time, # gNBs on, and which cell sleeps when. Idle cells sleep; busy cells stay on.")
+      caption="One shaped-RL run (seed 999, ~43% saved). RL's 4-seed AVERAGE is ~40% energy saved; "
+              "per-seed it varies 25-46%. Idle cells sleep; busy cells stay on.")
 
 # ---- 12. Bottom line ----
-s = new(); title_bar(s, "Bottom line & recommended next step")
+s = new(); title_bar(s, "Bottom line & next steps")
 bullets(s, [
  ("Delivered: a realistic bursty twin, a working imitation+RL pipeline (BC 100% match, stable PPO),", 0),
- ("a rigorous quantification of the energy-vs-QoS tradeoff, and a tunable energy-saving controller.", 1),
+ ("a rigorous energy-vs-QoS tradeoff, and a tunable energy-saving controller.", 1),
  ("RL result: with reward shaping, RL learns a greener + more-reliable operating point than the heuristic", 0),
- ("(better on energy and dropped-calls; slightly lower throughput) - a favourable, honest tradeoff.", 1),
- ("It does not STRICTLY beat a strong heuristic on all three axes - and we explain precisely why.", 0),
- ("Next step for a strict win: a spatial-HOTSPOT scenario (some cells persistently idle), where a smart", 0),
- ("controller can sleep truly-unused cells for free - more realistic and genuinely winnable.", 1),
+ ("- better on energy AND dropped-calls, slightly lower throughput: a favourable, honest tradeoff.", 1),
+ ("It does not STRICTLY beat a strong heuristic on all three axes - the real blocker is the slow", 0),
+ ("simulator's tiny sample budget (~640 RL trial-steps), too little to out-tune a good heuristic.", 1),
+ ("Next steps: (1) sample-efficient RL - offline RL on logged data, or a fast learned surrogate of the", 0),
+ ("sim - to escape that budget;  (2) richer / larger network scenarios;  (3) ship the tunable controller.", 1),
 ])
 
 # ---- 13. Reproducibility ----

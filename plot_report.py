@@ -102,7 +102,7 @@ ax.grid(alpha=0.3); ax.legend(loc="best", fontsize=9); ax.margins(0.18)
 fig.tight_layout(); fig.savefig(f"{OUT}/3_pruning_frontier.png", dpi=130); plt.close(fig)
 
 # ---------- FIG 4: controller behaviour over time (reuse plot_energy --plot on a shaped-RL run) ----------
-rl_run = shaped["rl"][0]
+rl_run = shaped["rl"][2]   # seed 999 (~43% saved, near the 4-seed avg); seed 555 is RL's low outlier
 subprocess.run(["/workspace/.venv/bin/python", "plot_energy.py", rl_run, "--plot",
                 f"{OUT}/4_controller_behavior_over_time.png"],
                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
